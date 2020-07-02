@@ -63,7 +63,7 @@ void TextInputData::setSelection(Range<int> sel)
 	selection = sel;
 }
 
-void TextInputData::setLengthLimits(int min, Maybe<int> max)
+void TextInputData::setLengthLimits(int min, std::optional<int> max)
 {
 	minLength = min;
 	maxLength = max;
@@ -74,7 +74,7 @@ int TextInputData::getMinLength() const
 	return minLength;
 }
 
-Maybe<int> TextInputData::getMaxLength() const
+std::optional<int> TextInputData::getMaxLength() const
 {
 	return maxLength;
 }
@@ -86,13 +86,13 @@ void TextInputData::insertText(const String& text)
 
 void TextInputData::insertText(const StringUTF32& t)
 {
-	if (!t.empty()) {
+	if (!t.empty() && !readOnly) {
 		size_t insertSize = t.length();
 		if (maxLength) {
 			const int curSelLen = selection.end - selection.start;
 			const size_t finalLen = text.size() - size_t(curSelLen) + insertSize;
-			if (int(finalLen) > maxLength.get()) {
-				insertSize = size_t(std::max(int64_t(0), int64_t(insertSize) + int64_t(maxLength.get()) - int64_t(finalLen)));
+			if (int(finalLen) > maxLength.value()) {
+				insertSize = size_t(std::max(int64_t(0), int64_t(insertSize) + int64_t(maxLength.value()) - int64_t(finalLen)));
 			}
 		}
 
@@ -137,15 +137,19 @@ void TextInputData::onControlCharacter(TextControlCharacter c, std::shared_ptr<I
 			break;
 		case TextControlCharacter::Paste:
 		{
-			auto str = clipboard->getStringData();
-			if (str) {
-				insertText(str.get());
+			if (!readOnly) {
+				auto str = clipboard->getStringData();
+				if (str) {
+					insertText(str.value());
+				}
 			}
 			break;
 		}
 		case TextControlCharacter::Cut:
-			clipboard->setData(String(text));
-			setText(StringUTF32());
+			if (!readOnly) {
+				clipboard->setData(String(text));
+				setText(StringUTF32());
+			}
 			break;
 		default:
 			break;
@@ -163,8 +167,22 @@ Range<int> TextInputData::getTotalRange() const
 	return Range<int>(0, int(text.size()));
 }
 
+void TextInputData::setReadOnly(bool enable)
+{
+	readOnly = enable;
+}
+
+bool TextInputData::isReadOnly() const
+{
+	return readOnly;
+}
+
 void TextInputData::onDelete()
 {
+	if (readOnly) {
+		return;
+	}
+	
 	if (selection.start == selection.end) {
 		if (selection.start < int(text.size())) {
 			setText(text.substr(0, selection.start) + text.substr(selection.start + 1));
@@ -176,6 +194,10 @@ void TextInputData::onDelete()
 
 void TextInputData::onBackspace()
 {
+	if (readOnly) {
+		return;
+	}
+	
 	if (selection.start == selection.end) {
 		if (selection.start > 0) { // If selection.s == 0, -1 causes it to overflow (unsigned). Shouldn't do anything in that case.
 			const auto start = selection.start;
@@ -228,7 +250,7 @@ void InputKeyboard::onButtonPressed(int scanCode)
 	const bool shiftDown = isButtonDown(Keys::LShift) || isButtonDown(Keys::RShift);
 	const bool ctrlDown = isButtonDown(Keys::LCtrl) || isButtonDown(Keys::RCtrl);
 
-	Maybe<TextControlCharacter> code;
+	std::optional<TextControlCharacter> code;
 
 	if (!shiftDown && !ctrlDown) {
 		switch (scanCode) {
@@ -313,7 +335,7 @@ void InputKeyboard::onButtonPressed(int scanCode)
 	}
 
 	if (code) {
-		onTextControlCharacterGenerated(code.get());
+		onTextControlCharacterGenerated(code.value());
 	}
 	InputButtonBase::onButtonPressed(scanCode);
 }

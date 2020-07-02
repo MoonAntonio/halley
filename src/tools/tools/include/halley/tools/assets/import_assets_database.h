@@ -4,6 +4,7 @@
 #include <mutex>
 #include "halley/text/halleystring.h"
 #include <cstdint>
+#include <utility>
 #include "asset_importer.h"
 #include "halley/core/resources/asset_database.h"
 
@@ -25,20 +26,20 @@ namespace Halley
 
 		ImportAssetsDatabaseEntry() {}
 
-		ImportAssetsDatabaseEntry(String assetId, Path srcDir, Path inputFile, int64_t time)
-			: assetId(assetId)
-			, srcDir(srcDir)
+		ImportAssetsDatabaseEntry(String assetId, Path srcDir, const Path& inputFile, int64_t time)
+			: assetId(std::move(assetId))
+			, srcDir(std::move(srcDir))
 			, inputFiles({ TimestampedPath(inputFile, time) })
 		{}
 
 		ImportAssetsDatabaseEntry(String assetId, Path srcDir)
-			: assetId(assetId)
-			, srcDir(srcDir)
+			: assetId(std::move(assetId))
+			, srcDir(std::move(srcDir))
 		{}
 
 		ImportAssetsDatabaseEntry(String assetId, Path srcDir, std::vector<TimestampedPath>&& inputFiles)
-			: assetId(assetId)
-			, srcDir(srcDir)
+			: assetId(std::move(assetId))
+			, srcDir(std::move(srcDir))
 			, inputFiles(std::move(inputFiles))
 		{}
 
@@ -62,6 +63,7 @@ namespace Halley
 		public:
 			std::array<int64_t, 3> timestamp;
 			Metadata metadata;
+			Path basePath;
 
 			void serialize(Serializer& s) const;
 			void deserialize(Deserializer& s);
@@ -75,9 +77,11 @@ namespace Halley
 		std::unique_ptr<AssetDatabase> makeAssetDatabase(const String& platform) const;
 
 		bool needToLoadInputMetadata(const Path& path, std::array<int64_t, 3> timestamps) const;
-		void setInputFileMetadata(const Path& path, std::array<int64_t, 3> timestamps, const Metadata& data);
-		Maybe<Metadata> getMetadata(const Path& path) const;
-		Maybe<Path> getMetadataPath(AssetType type, const String& assetId) const;
+		void setInputFileMetadata(const Path& path, std::array<int64_t, 3> timestamps, const Metadata& data, Path basePath);
+		std::optional<Metadata> getMetadata(const Path& path) const;
+		std::optional<Metadata> getMetadata(AssetType type, const String& assetId) const;
+
+		Path getPrimaryInputFile(AssetType type, const String& assetId) const;
 
 		bool needsImporting(const ImportAssetsDatabaseEntry& asset) const;
 		void markAsImported(const ImportAssetsDatabaseEntry& asset);
@@ -87,6 +91,8 @@ namespace Halley
 		std::vector<ImportAssetsDatabaseEntry> getAllMissing() const;
 
 		std::vector<AssetResource> getOutFiles(String assetId) const;
+		std::vector<String> getInputFiles() const;
+		std::vector<std::pair<AssetType, String>> getAssetsFromFile(const Path& inputFile);
 
 		void serialize(Serializer& s) const;
 		void deserialize(Deserializer& s);

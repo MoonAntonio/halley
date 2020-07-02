@@ -3,10 +3,10 @@
 
 using namespace Halley;
 
-UILabel::UILabel(const String& id, TextRenderer style, const LocalisedString& text)
-	: UIWidget(id, {})
-	, renderer(style)
-	, text(text)
+UILabel::UILabel(String id, TextRenderer style, LocalisedString text)
+	: UIWidget(std::move(id), {})
+	, renderer(std::move(style))
+	, text(std::move(text))
 	, aliveFlag(std::make_shared<bool>(true))
 {
 	updateText();
@@ -118,7 +118,7 @@ float UILabel::getCellWidth()
 		if (parent) {
 			auto max = parent->getMaxChildWidth();
 			if (max) {
-				return max.get();
+				return max.value();
 			}
 		}
 	}
@@ -130,6 +130,14 @@ void UILabel::setText(const LocalisedString& t)
 {
 	if (text != t) {
 		text = t;
+		updateText();
+	}
+}
+
+void UILabel::setText(LocalisedString&& t)
+{
+	if (text != t) {
+		text = std::move(t);
 		updateText();
 	}
 }

@@ -1,10 +1,10 @@
 project (halley-core)
 
-include_directories(${Boost_INCLUDE_DIR} "include" "include/halley/core" "../utils/include" "../entity/include" "../audio/include" "../net/include")
+include_directories(${Boost_INCLUDE_DIR} "include" "include/halley/core" "../utils/include" "../audio/include" "../net/include" "../entity/include")
 
 set(SOURCES
         "src/api/halley_api.cpp"
-        
+
         "src/dummy/dummy_audio.cpp"
         "src/dummy/dummy_input.cpp"
         "src/dummy/dummy_network.cpp"
@@ -16,9 +16,11 @@ set(SOURCES
 
         "src/game/core.cpp"
         "src/game/environment.cpp"
+        "src/game/game.cpp"
         "src/game/game_console.cpp"
         "src/game/halley_main.cpp"
-		"src/game/halley_statics.cpp"
+        "src/game/halley_statics.cpp"
+        "src/game/main_loop.cpp"
 
         "src/graphics/camera.cpp"
         "src/graphics/material/material.cpp"
@@ -31,6 +33,7 @@ set(SOURCES
         "src/graphics/painter.cpp"
         "src/graphics/render_context.cpp"
         "src/graphics/render_target/render_target_texture.cpp"
+        "src/graphics/render_target/render_surface.cpp"
         "src/graphics/shader.cpp"
         "src/graphics/sprite/animation.cpp"
         "src/graphics/sprite/animation_player.cpp"
@@ -61,17 +64,15 @@ set(SOURCES
         "src/resources/resources.cpp"
         "src/resources/standard_resources.cpp"
 
-        "src/stage/entity_stage.cpp"
         "src/stage/stage.cpp"
 
         "src/devcon/devcon_client.cpp"
         "src/devcon/devcon_messages.cpp"
         "src/devcon/devcon_server.cpp"
-        
-        "src/utils/world_stats.cpp"
         )
 
 set(HEADERS
+
         "src/dummy/dummy_audio.h"
         "src/dummy/dummy_input.h"
         "src/dummy/dummy_plugins.h"
@@ -93,7 +94,10 @@ set(HEADERS
         "include/halley/core/api/save_data.h"
         "include/halley/core/api/system_api.h"
         "include/halley/core/api/video_api.h"
-        
+
+        "include/halley/core/entry/entry_point.h"
+        "include/halley/core/entry/game_loader.h"
+
         "include/halley/core/game/core.h"
         "include/halley/core/game/environment.h"
         "include/halley/core/game/game.h"
@@ -101,6 +105,8 @@ set(HEADERS
         "include/halley/core/game/halley_main.h"
         "include/halley/core/game/halley_statics.h"
         "include/halley/core/game/game_platform.h"
+        "include/halley/core/game/main_loop.h"
+        "include/halley/core/game/scene_editor_interface.h"
         
         "include/halley/core/graphics/blend.h"
         "include/halley/core/graphics/camera.h"
@@ -116,6 +122,7 @@ set(HEADERS
         "include/halley/core/graphics/movie/movie_player.h"
         "include/halley/core/graphics/painter.h"
         "include/halley/core/graphics/render_context.h"
+        "include/halley/core/graphics/render_target/render_surface.h"
         "include/halley/core/graphics/render_target/render_target.h"
         "include/halley/core/graphics/render_target/render_target_screen.h"
         "include/halley/core/graphics/render_target/render_target_texture.h"
@@ -154,7 +161,6 @@ set(HEADERS
         "src/resources/resource_filesystem.h"
         "src/resources/resource_pack.h"
 
-        "include/halley/core/stage/entity_stage.h"
         "include/halley/core/stage/stage.h"
         "include/halley/core/stage/stage_id.h"
 
@@ -162,7 +168,6 @@ set(HEADERS
         "include/halley/core/devcon/devcon_messages.h"
         "include/halley/core/devcon/devcon_server.h"
         
-        "include/halley/core/utils/world_stats.h"
         "src/prec.h"
         )
 
@@ -170,7 +175,7 @@ assign_source_group(${SOURCES})
 assign_source_group(${HEADERS})
 
 add_library (halley-core ${SOURCES} ${HEADERS})
-target_link_libraries(halley-core halley-entity halley-utils halley-audio halley-net)
+target_link_libraries(halley-core halley-utils halley-audio halley-net)
 
 # Hack, there should be no platform specific stuff in core...
 if (USE_ANDROID)

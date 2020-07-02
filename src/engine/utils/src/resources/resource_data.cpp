@@ -11,7 +11,7 @@ using namespace Halley;
 Bytes ResourceDataReader::readAll()
 {
 	Bytes result(size() - tell());
-	read(gsl::as_writeable_bytes(gsl::span<Byte>(result)));
+	read(gsl::as_writable_bytes(gsl::span<Byte>(result)));
 	return result;
 }
 
@@ -117,7 +117,7 @@ ResourceDataStream::ResourceDataStream(String path, ResourceDataMakeReader makeR
 
 ResourceLoader::ResourceLoader(ResourceLoader&& loader) noexcept
 	: locator(loader.locator)
-	, resources(resources)
+	, resources(loader.resources)
 	, name(std::move(loader.name))
 	, priority(loader.priority)
 	, api(loader.api)

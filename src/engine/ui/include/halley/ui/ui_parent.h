@@ -21,7 +21,7 @@ namespace Halley {
 		virtual void sendEvent(UIEvent&& event) const = 0;
 
 		virtual Rect4f getRect() const = 0;
-		virtual Maybe<float> getMaxChildWidth() const;
+		virtual std::optional<float> getMaxChildWidth() const;
 
 		void addChild(std::shared_ptr<UIWidget> widget);
 		void removeChild(UIWidget& widget);
@@ -32,6 +32,9 @@ namespace Halley {
 		bool isWaitingToSpawnChildren() const;
 
 		virtual void markAsNeedingLayout();
+		virtual void onChildrenAdded() {}
+		virtual void onChildrenRemoved() {}
+		virtual void onChildAdded(UIWidget& child) {}
 
 		std::vector<std::shared_ptr<UIWidget>>& getChildren();
 		const std::vector<std::shared_ptr<UIWidget>>& getChildren() const;
@@ -61,6 +64,9 @@ namespace Halley {
 		}
 
 		virtual bool isDescendentOf(const UIWidget& ancestor) const;
+
+		template <typename F>
+		void descend(F f);
 		
 	private:
 		std::vector<std::shared_ptr<UIWidget>> children;

@@ -57,7 +57,7 @@ namespace Halley
 		ConfigNode(ConfigNode&& other);
 		ConfigNode(MapType&& entryMap);
 		ConfigNode(SequenceType&& entryList);
-		ConfigNode(String&& value);
+		ConfigNode(String value);
 		ConfigNode(bool value);
 		ConfigNode(int value);
 		ConfigNode(float value);
@@ -164,10 +164,10 @@ namespace Halley
 	{
 	public:
 		ConfigFile();
-		ConfigFile(const ConfigFile& other) = delete;
+		explicit ConfigFile(const ConfigFile& other);
 		ConfigFile(ConfigFile&& other);
 
-		ConfigFile& operator=(const ConfigFile& other) = delete;
+		ConfigFile& operator=(const ConfigFile& other);
 		ConfigFile& operator=(ConfigFile&& other);
 
 		ConfigNode& getRoot();
@@ -181,7 +181,7 @@ namespace Halley
 
 		void reload(Resource&& resource) override;
 
-	private:
+	protected:
 		ConfigNode root;
 
 		void updateRoot();
@@ -204,5 +204,21 @@ namespace Halley
 		int assetVersion = 0;
 		const ConfigFile* file = nullptr;
 		const ConfigNode* node = nullptr;
+	};
+	
+	class Prefab : public ConfigFile {
+	public:
+		static std::unique_ptr<Prefab> loadResource(ResourceLoader& loader);
+		constexpr static AssetType getAssetType() { return AssetType::Prefab; }
+
+		void reload(Resource&& resource) override;
+	};
+
+	class Scene final : public Prefab {
+	public:
+		static std::unique_ptr<Scene> loadResource(ResourceLoader& loader);
+		constexpr static AssetType getAssetType() { return AssetType::Scene; }
+
+		void reload(Resource&& resource) override;
 	};
 }

@@ -1,6 +1,5 @@
 #include "resource_filesystem.h"
 #include "resources/resource_locator.h"
-#include <set>
 #include <halley/support/exception.h>
 #include "resource_pack.h"
 #include "halley/support/logger.h"
@@ -93,7 +92,7 @@ void ResourceLocator::addFileSystem(const Path& path)
 	add(std::make_unique<FileSystemResourceLocator>(system, path), path);
 }
 
-void ResourceLocator::addPack(const Path& path, const String& encryptionKey, bool preLoad, bool allowFailure, Maybe<int> priority)
+void ResourceLocator::addPack(const Path& path, const String& encryptionKey, bool preLoad, bool allowFailure, std::optional<int> priority)
 {
 	auto dataReader = system.getDataReader(path.string());
 	if (dataReader) {

@@ -14,7 +14,7 @@ namespace Halley {
 	class Message;
 	class HalleyAPI;
 
-	template <typename T, std::ptrdiff_t size = gsl::dynamic_extent> using Span = gsl::span<T, size>;
+	template <typename T, std::size_t size = gsl::dynamic_extent> using Span = gsl::span<T, size>;
 
 	// True if T::init() exists
 	template <class, class = Halley::void_t<>> struct HasInitMember : std::false_type {};
@@ -35,8 +35,8 @@ namespace Halley {
 		System(std::initializer_list<FamilyBindingBase*> families, std::initializer_list<int> messageTypesReceived);
 		virtual ~System() {}
 
-		String getName() const { return name; }
-		void setName(String n) { name = n; }
+		const String& getName() const { return name; }
+		void setName(String n) { name = std::move(n); }
 		size_t getEntityCount() const;
 		bool tryInit();
 
@@ -47,6 +47,7 @@ namespace Halley {
 	protected:
 		const HalleyAPI& doGetAPI() const { return *api; }
 		World& doGetWorld() const { return *world; }
+		Resources& doGetResources() const { return *resources; }
 
 		virtual void initBase() {}
 		virtual void updateBase(Time) {}
@@ -77,41 +78,35 @@ namespace Halley {
 			doSendMessage(entityId, std::move(toSend), sizeof(T), T::messageIndex);
 		}
 
-		template <typename T, typename std::enable_if<HasInitMember<T>::value, int>::type = 0>
+		template <typename T>
 		void invokeInit(T* system)
 		{
-			system->init();
+			if constexpr (HasInitMember<T>::value) {
+				system->init();
+			}
 		}
 
-		template <typename T, typename std::enable_if<!HasInitMember<T>::value, int>::type = 0>
-		void invokeInit(T*)
-		{}
-
-		template <typename T, typename F, typename std::enable_if<HasOnEntitiesAdded<T, F>::value, int>::type = 0>
+		template <typename T, typename F>
 		void initialiseOnEntityAdded(FamilyBinding<F>& binding, T* system)
 		{
-			binding.setOnEntitiesAdded([system] (void* es, size_t count)
-			{
-				system->onEntitiesAdded(Span<F>(static_cast<F*>(es), count));
-			});
+			if constexpr (HasOnEntitiesAdded<T, F>::value) {
+				binding.setOnEntitiesAdded([system] (void* es, size_t count)
+				{
+					system->onEntitiesAdded(Span<F>(static_cast<F*>(es), count));
+				});
+			}
 		}
 
-		template <typename T, typename F, typename std::enable_if<!HasOnEntitiesAdded<T, F>::value, int>::type = 0>
-		void initialiseOnEntityAdded(FamilyBinding<F>&, T*)
-		{}
-
-		template <typename T, typename F, typename std::enable_if<HasOnEntitiesRemoved<T, F>::value, int>::type = 0>
+		template <typename T, typename F>
 		void initialiseOnEntityRemoved(FamilyBinding<F>& binding, T* system)
 		{
-			binding.setOnEntitiesRemoved([system] (void* es, size_t count)
-			{
-				system->onEntitiesRemoved(Span<F>(static_cast<F*>(es), count));
-			});
+			if constexpr (HasOnEntitiesRemoved<T, F>::value) {
+				binding.setOnEntitiesRemoved([system] (void* es, size_t count)
+				{
+					system->onEntitiesRemoved(Span<F>(static_cast<F*>(es), count));
+				});
+			}
 		}
-
-		template <typename T, typename F, typename std::enable_if<!HasOnEntitiesRemoved<T, F>::value, int>::type = 0>
-		void initialiseOnEntityRemoved(FamilyBinding<F>&, T*)
-		{}
 
 		template <typename T, typename F>
 		void initialiseFamilyBinding(FamilyBinding<F>& binding, T* system)
@@ -130,6 +125,7 @@ namespace Halley {
 
 		World* world = nullptr;
 		const HalleyAPI* api = nullptr;
+		Resources* resources = nullptr;
 		String name;
 		int systemId = -1;
 		bool initialised = false;

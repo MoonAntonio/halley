@@ -148,7 +148,7 @@ void DX11Painter::setViewPort(Rect4i rect)
 
 void DX11Painter::setClip(Rect4i clip, bool enable)
 {
-	clipping = enable ? clip : Maybe<Rect4i>();
+	clipping = enable ? clip : std::optional<Rect4i>();
 }
 
 void DX11Painter::onUpdateProjection(Material& material)
@@ -203,7 +203,7 @@ void DX11Painter::setRasterizer(const DX11RasterizerOptions& options)
 	}
 
 	if (options.scissor) {
-		auto clip = clipping.get();
+		auto clip = clipping.value();
 		D3D11_RECT rect;
 		rect.top = clip.getTop();
 		rect.bottom = clip.getBottom();

@@ -23,14 +23,14 @@ ConfigNode Preferences::save() const
 	{
 		ConfigNode::MapType windowNode;
 		if (windowPosition) {
-			windowNode["position"] = windowPosition.get();
+			windowNode["position"] = windowPosition.value();
 		}
 		windowNode["size"] = windowSize;
 		windowNode["state"] = int(windowState);
 		root["window"] = std::move(windowNode);
 	}
 
-	return std::move(root);
+	return root;
 }
 
 void Preferences::load(const ConfigNode& root)

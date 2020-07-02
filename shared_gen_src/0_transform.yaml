@@ -1,0 +1,22 @@
+---
+
+component:
+  name: Transform2D
+  customImplementation: "halley/entity/components/transform_2d_component.h"
+  members:
+  - position:
+      type: 'Halley::Vector2f'
+      access: protected
+  - rotation:
+      type: 'Halley::Angle1f'
+      access: protected
+  - scale:
+      type: 'Halley::Vector2f'
+      access: protected
+      defaultValue: 'Halley::Vector2f(1.0f, 1.0f)'
+  - subWorld:
+      type: int
+      access: protected
+      defaultValue: 'INT_MIN'
+
+...

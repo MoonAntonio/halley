@@ -36,6 +36,16 @@ void DX11Video::deInit()
 	releaseD3D();
 }
 
+void DX11Video::onResume()
+{
+	loader = std::make_unique<DX11Loader>(*this);
+}
+
+void DX11Video::onSuspend()
+{
+	loader.reset();
+}
+
 void DX11Video::initD3D(Window& window)
 {
 	if (initialised) {
@@ -171,7 +181,7 @@ String DX11Video::getShaderLanguage()
 
 ID3D11Device& DX11Video::getDevice()
 {
-	Expects(device);
+	Expects(device != nullptr);
 	return *device;
 }
 
@@ -183,7 +193,7 @@ ID3D11DeviceContext1& DX11Video::getDeviceContext()
 
 DX11SwapChain& DX11Video::getSwapChain()
 {
-	Expects(swapChain);
+	Expects(swapChain != nullptr);
 	return *swapChain;
 }
 

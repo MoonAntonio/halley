@@ -32,23 +32,27 @@ if (DEV_BUILD EQUAL 1)
 endif()
 
 
-# C++14 support
-set(CMAKE_CXX_STANDARD 14)
+# C++17 support
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -stdlib=libc++") # Apparently Clang on Mac needs this...
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -stdlib=libc++") # Apparently Clang on Mac needs this...
 endif()
 if (EMSCRIPTEN)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -stdlib=libc++")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -stdlib=libc++")
 	add_definitions(-s USE_SDL=2)
 endif()
 
 
 # Compiler-specific flags
 if (MSVC)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP /fp:fast /WX -D_ENABLE_EXTENDED_ALIGNED_STORAGE")
+	if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP /fp:fast /WX -D_ENABLE_EXTENDED_ALIGNED_STORAGE /wd4275 /wd4251")
+	else()
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fp:fast /WX -D_ENABLE_EXTENDED_ALIGNED_STORAGE -Wno-unused-private-field -Wno-unused-variable -Wno-deprecated-declarations -Wno-microsoft-cast -Wno-switch -Wno-missing-declarations -Wno-string-plus-int -Wno-unused-function -Wno-assume")
+	endif()
 	if (MSVC_VERSION GREATER_EQUAL 1910)
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++14 /permissive-")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17 /permissive-")
 	endif ()
 	set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /sdl /Oi /Ot /Oy /Ob2 /Zi")
 	set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} /sdl /Oi /Ot /Oy /Ob2 /Zi")
@@ -61,11 +65,13 @@ if (MSVC)
 		set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} /LTCG")
 	endif()
 
-	set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} /DEBUG:FASTLINK")
-	set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "${CMAKE_STATIC_LINKER_FLAGS_RELEASE} /LTCG")
-	set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /LTCG")
-	set(CMAKE_STATIC_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_STATIC_LINKER_FLAGS_RELWITHDEBINFO} /LTCG")
-	set(CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO} /LTCG")
+	if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+		set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} /DEBUG:FASTLINK")
+		set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "${CMAKE_STATIC_LINKER_FLAGS_RELEASE} /LTCG")
+		set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /LTCG")
+		set(CMAKE_STATIC_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_STATIC_LINKER_FLAGS_RELWITHDEBINFO} /LTCG")
+		set(CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO} /LTCG")
+	endif()
 	set(CMAKE_CXX_STANDARD 17)
 
 	if (${CMAKE_SYSTEM_NAME} MATCHES "WindowsStore")
@@ -142,8 +148,9 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "WindowsStore")
 endif ()
 
 if (APPLE)
-  set(USE_AVFOUNDATION 1)
-#  set(USE_METAL 1)
+	set(USE_AVFOUNDATION 1)
+	set(USE_METAL 1)
+	set(USE_ASIO 1)
 endif ()
 
 # Libs
@@ -164,7 +171,6 @@ if (USE_SDL2)
 endif()
 
 # Boost
-message("Boost root is ${BOOST_ROOT}")
 find_package(Boost REQUIRED)
 add_definitions(-DBOOST_ALL_NO_LIB -DBOOST_CONFIG_SUPPRESS_OUTDATED_MESSAGE)
 if (BOOST_INCLUDE_DIR)
@@ -202,6 +208,11 @@ endif ()
 # DX11
 if (USE_DX11)
 	add_definitions(-DWITH_DX11)
+endif()
+
+# Metal
+if (USE_METAL)
+	add_definitions(-DWITH_METAL)
 endif()
 
 # WinRT
@@ -273,6 +284,7 @@ set(HALLEY_PROJECT_EXTERNAL_LIBS
 
 set(HALLEY_PROJECT_INCLUDE_DIRS
 	${HALLEY_PATH}/include
+	${HALLEY_PATH}/shared_gen/cpp
 	${HALLEY_PATH}/src/contrib
 	${HALLEY_PATH}/src/engine/core/include
 	${HALLEY_PATH}/src/engine/net/include
@@ -285,6 +297,7 @@ set(HALLEY_PROJECT_INCLUDE_DIRS
 	)
 
 set(HALLEY_PROJECT_LIBS
+	optimized halley-contrib
 	optimized halley-ui
 	optimized halley-core
 	optimized halley-entity
@@ -292,6 +305,7 @@ set(HALLEY_PROJECT_LIBS
 	optimized halley-net
 	optimized halley-lua
 	optimized halley-utils
+	debug halley-contrib_d
 	debug halley-ui_d
 	debug halley-core_d
 	debug halley-entity_d
@@ -350,6 +364,14 @@ set(HALLEY_PROJECT_LIBS
 	)
 endif ()
 
+if (USE_METAL)
+set(HALLEY_PROJECT_LIBS
+	optimized halley-metal
+	debug halley-metal_d
+	${HALLEY_PROJECT_LIBS}
+	)
+endif ()
+
 if (USE_WINRT)
 set(HALLEY_PROJECT_LIBS
 	optimized halley-winrt
@@ -398,27 +420,38 @@ function(halleyProject name sources headers genDefinitions targetDir)
 	include_directories("." "gen/cpp" ${HALLEY_PROJECT_INCLUDE_DIRS})
 	link_directories(${HALLEY_PROJECT_LIB_DIRS})
 
-	if (HOTRELOAD)
-		set(HALLEY_RUNNER_PATH ${HALLEY_PATH}\\bin\\halley-runner.exe)
-		set(HALLEY_RUNNER_DEBUG_PATH ${HALLEY_PATH}\\bin\\halley-runner_d.exe)
-		configure_file(${HALLEY_PATH}/cmake/halley_game.vcxproj.user.in ${CMAKE_CURRENT_BINARY_DIR}/${name}.vcxproj.user @ONLY) 
-	endif()
-
-	if (HOTRELOAD)
-		add_library(${name} SHARED ${proj_sources} ${proj_headers})
-		add_definitions(-DHALLEY_SHARED_LIBRARY)
-	elseif (BUILD_MACOSX_BUNDLE)
+	if (BUILD_MACOSX_BUNDLE)
 		add_executable(${name} MACOSX_BUNDLE ${proj_sources} ${proj_headers})
 		add_definitions(-DHALLEY_EXECUTABLE)
 	elseif (ANDROID_NDK)
 		add_library(${name} SHARED ${proj_sources} ${proj_headers})
 		add_definitions(-DHALLEY_SHARED_LIBRARY)
-	else()
+	elseif (HALLEY_MONOLITHIC)
 		add_executable(${name} WIN32 ${proj_sources} ${proj_headers})
-		add_definitions(-DHALLEY_EXECUTABLE)
+		target_compile_definitions(${name} PUBLIC HALLEY_EXECUTABLE)
+	else()
+		add_library(${name} STATIC ${proj_sources} ${proj_headers})
+		add_library(${name}-dll SHARED ${HALLEY_PATH}/src/entry/halley_dll_entry.cpp)
+		add_executable(${name}-exe WIN32 ${HALLEY_PATH}/src/entry/halley_exe_entry.cpp)
+		
+		target_compile_definitions(${name} PUBLIC HALLEY_STATIC_LIBRARY)
+		target_compile_definitions(${name}-dll PUBLIC HALLEY_SHARED_LIBRARY)
+		target_compile_definitions(${name}-exe PUBLIC HALLEY_EXECUTABLE)
+
+		# Setup default run paths for DLL
+		# Note that I'm using release halley-cmd for debug, as currently they have the same name
+		if (TARGET halley-cmd)
+			set(HALLEY_RUNNER_PATH ${HALLEY_PATH}\\bin\\halley-cmd.exe)
+			set(HALLEY_RUNNER_DEBUG_PATH ${HALLEY_PATH}\\bin\\halley-cmd.exe)
+			configure_file(${HALLEY_PATH}/cmake/halley_game_dll.vcxproj.user.in ${CMAKE_CURRENT_BINARY_DIR}/${name}-dll.vcxproj.user @ONLY) 
+			add_dependencies(${name}-dll halley-cmd)
+		endif()
+
+		#set_target_properties(${name}-dll PROPERTIES OUTPUT_NAME ${name})
+		#set_target_properties(${name}-exe PROPERTIES OUTPUT_NAME ${name})
 	endif()
 
-	if (MSVC)
+	if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 		if (USE_PCH)
 			add_precompiled_header(${name} prec.h FORCEINCLUDE SOURCE_CXX prec.cpp)
 		endif ()
@@ -429,38 +462,55 @@ function(halleyProject name sources headers genDefinitions targetDir)
 		set_target_properties(${name} PROPERTIES SUFFIX ".bc")
 	endif()
 
+	SET(LINK_LIBRARIES ${HALLEY_PROJECT_LIBS})
 	if (EMBED)
-		target_link_libraries(${name} halley-ui halley-core halley-entity halley-audio halley-net halley-lua halley-utils ${HALLEY_PROJECT_EXTERNAL_LIBS})
+		SET(LINK_LIBRARIES ${LINK_LIBRARIES} halley-ui halley-core halley-entity halley-audio halley-net halley-lua halley-utils ${HALLEY_PROJECT_EXTERNAL_LIBS})
 		if (USE_OPENGL OR USE_OPENGL_ES2 OR USE_OPENGL_ES3)
-			target_link_libraries(${name} halley-opengl)
+			SET(LINK_LIBRARIES ${LINK_LIBRARIES} halley-opengl)
 		endif ()
 		if (USE_SDL2)
-			target_link_libraries(${name} halley-sdl)
+			SET(LINK_LIBRARIES ${LINK_LIBRARIES} halley-sdl)
 		endif ()
 		if (USE_ASIO)
-			target_link_libraries(${name} halley-asio)
+			SET(LINK_LIBRARIES ${LINK_LIBRARIES} halley-asio)
 		endif ()
 		if (USE_DX11)
-			target_link_libraries(${name} halley-dx11)
+			SET(LINK_LIBRARIES ${LINK_LIBRARIES} halley-dx11)
 		endif ()
 		if (USE_WINRT)
-			target_link_libraries(${name} halley-winrt)
+			SET(LINK_LIBRARIES ${LINK_LIBRARIES} halley-winrt)
 		endif ()
 		if (USE_MEDIA_FOUNDATION)
-			target_link_libraries(${name} halley-mf)
+			SET(LINK_LIBRARIES ${LINK_LIBRARIES} halley-mf)
 		endif ()
 		if (USE_AVFOUNDATION)
-			target_link_libraries(${name} halley-avf)
+			SET(LINK_LIBRARIES ${LINK_LIBRARIES} halley-avf)
 		endif ()
 		if (USE_ANDROID)
-			target_link_libraries(${name} halley-android)
+			SET(LINK_LIBRARIES ${LINK_LIBRARIES} halley-android)
 		endif ()
+		if (USE_METAL)
+			SET(LINK_LIBRARIES ${LINK_LIBRARIES} halley-metal)
+		endif()
 	else ()
-		target_link_libraries(${name} ${HALLEY_PROJECT_LIBS})
+		SET(LINK_LIBRARIES ${LINK_LIBRARIES} ${HALLEY_PROJECT_LIBS})
 	endif ()
+
+	if (HALLEY_MONOLITHIC)
+		target_link_libraries(${name} ${LINK_LIBRARIES})
+	else ()
+		target_link_libraries(${name}-exe ${name} ${LINK_LIBRARIES})
+		target_link_libraries(${name}-dll ${name} ${LINK_LIBRARIES})
+	endif()
 
 	if (NOT ${CMAKE_SYSTEM_NAME} MATCHES "WindowsStore")
 		set_target_properties(${name} PROPERTIES DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
+		if (TARGET ${name}-exe)
+			set_target_properties(${name}-exe PROPERTIES DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
+		endif()
+		if (TARGET ${name}-dll)
+			set_target_properties(${name}-dll PROPERTIES DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
+		endif()
 	endif ()
 
 	if (BUILD_MACOSX_BUNDLE)

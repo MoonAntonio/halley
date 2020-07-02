@@ -13,8 +13,10 @@
 #include <halley/data_structures/vector.h>
 #include <halley/data_structures/tree_map.h>
 #include "service.h"
+#include "create_functions.h"
 
 namespace Halley {
+	class UUID;
 	class ConfigNode;
 	class RenderContext;
 	class Entity;
@@ -25,7 +27,7 @@ namespace Halley {
 	class World
 	{
 	public:
-		World(const HalleyAPI* api, bool collectMetrics);
+		World(const HalleyAPI& api, Resources& resources, bool collectMetrics, CreateComponentFunction createComponent);
 		~World();
 
 		void step(TimeLine timeline, Time elapsed);
@@ -45,17 +47,44 @@ namespace Halley {
 		void loadSystems(const ConfigNode& config, std::function<std::unique_ptr<System>(String)> createFunction);
 
 		template <typename T>
-		T& getService() const
+		T& getService()
+		{
+			return getService<T>("");
+		}
+		
+		template <typename T>
+		T& getService(const String& systemName)
 		{
 			static_assert(std::is_base_of<Service, T>::value, "Must extend Service");
-			return *dynamic_cast<T*>(&getService(typeid(T).name()));
+
+			const auto serviceName = typeid(T).name();
+			const auto rawService = tryGetService(serviceName);
+			if (!rawService) {
+				if constexpr (std::is_default_constructible_v<T>) {
+					return dynamic_cast<T&>(addService(std::make_shared<T>()));
+				} else {
+					throw Exception(String("Service \"") + serviceName + "\" required by \"" + (systemName.isEmpty() ? "" : (systemName + "System")) + "\" not found, and it cannot be default constructed.", HalleyExceptions::Entity);
+				}
+			}
+			return *dynamic_cast<T*>(rawService);
 		}
 
-		EntityRef createEntity();
+		EntityRef createEntity(String name = "", std::optional<EntityRef> parent = {});
+		EntityRef createEntity(UUID uuid, String name = "", std::optional<EntityRef> parent = {});
+		EntityRef createEntity(UUID uuid, String name, EntityId parentId);
+
 		void destroyEntity(EntityId id);
+		void destroyEntity(EntityRef entity);
+
 		EntityRef getEntity(EntityId id);
-		Entity* tryGetEntity(EntityId id);
+		Entity* tryGetRawEntity(EntityId id);
+		std::optional<EntityRef> findEntity(const UUID& id);
+
 		size_t numEntities() const;
+		std::vector<EntityRef> getEntities();
+		std::vector<ConstEntityRef> getEntities() const;
+		std::vector<EntityRef> getTopLevelEntities();
+		std::vector<ConstEntityRef> getTopLevelEntities() const;
 
 		void spawnPending(); // Warning: use with care, will invalidate entities
 
@@ -73,17 +102,24 @@ namespace Halley {
 			}
 			*/
 
-			auto newFam = std::make_unique<FamilyImpl<T>>();
+			auto newFam = std::make_unique<FamilyImpl<T>>(*maskStorage);
 			Family* newFamPtr = newFam.get();
 			onAddFamily(*newFamPtr);
 			//families[mask] = std::move(newFam);
 			families.emplace_back(std::move(newFam));
 			return *newFamPtr;
 		}
-		
+
+		const CreateComponentFunction& getCreateComponentFunction() const;
+
+		MaskStorage& getMaskStorage() const;
+		ComponentDeleterTable& getComponentDeleterTable();
+
 	private:
-		const HalleyAPI* api;
+		const HalleyAPI& api;
+		Resources& resources;
 		std::array<Vector<std::unique_ptr<System>>, static_cast<int>(TimeLine::NUMBER_OF_TIMELINES)> systems;
+		CreateComponentFunction createComponent;
 		bool collectMetrics = false;
 		bool entityDirty = false;
 		
@@ -97,11 +133,17 @@ namespace Halley {
 
 		TreeMap<FamilyMaskType, std::vector<Family*>> familyCache;
 
+		std::shared_ptr<MaskStorage> maskStorage;
+		std::shared_ptr<ComponentDeleterTable> componentDeleterTable;
+
 		mutable std::array<StopwatchAveraging, 3> timer;
 
 		void allocateEntity(Entity* entity);
 		void updateEntities();
 		void initSystems();
+
+		void doDestroyEntity(EntityId id);
+		void doDestroyEntity(Entity* entity);
 		void deleteEntity(Entity* entity);
 
 		void updateSystems(TimeLine timeline, Time elapsed);
@@ -109,7 +151,7 @@ namespace Halley {
 		
 		void onAddFamily(Family& family);
 
-		Service& getService(const String& name) const;
+		Service* tryGetService(const String& name) const;
 
 		const std::vector<Family*>& getFamiliesFor(const FamilyMaskType& mask);
 	};

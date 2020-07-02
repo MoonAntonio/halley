@@ -5,41 +5,9 @@
 #include <halley/support/exception.h>
 #include <algorithm>
 #include "halley/text/string_converter.h"
+#include "halley/core/game/game_platform.h"
 
 using namespace Halley;
-
-static String toFileName(String className)
-{
-	std::stringstream ss;
-
-	auto isUpper = [](char c) {
-		return c >= 'A' && c <= 'Z';
-	};
-
-	auto lower = [](char c) {
-		return static_cast<char>(c + 32);
-	};
-
-	auto tryGet = [](const String& s, size_t i) {
-		if (s.size() > i) {
-			return s[i];
-		} else {
-			return char(0);
-		}
-	};
-
-	for (size_t i = 0; i < className.size(); i++) {
-		if (isUpper(className[i])) {
-			if (i > 0 && !isUpper(tryGet(className, i+1))) {
-				ss << '_';
-			}
-			ss << lower(className[i]);
-		} else {
-			ss << className[i];
-		}
-	}
-	return ss.str();
-}
 
 static String upperFirst(String name)
 {
@@ -57,33 +25,28 @@ static String lowerFirst(String name)
 	return name;
 }
 
-static Path makePath(Path dir, String className, String extension)
-{
-	return dir / (toFileName(className) + "." + extension).cppStr();
-}
-
 CodeGenResult CodegenCPP::generateComponent(ComponentSchema component)
 {
-	String className = component.name + "Component";
+	const String className = component.name + "Component" + (component.customImplementation ? "Base" : "");
 
 	CodeGenResult result;
 	result.emplace_back(CodeGenFile(makePath("components", className, "h"), generateComponentHeader(component)));
 	return result;
 }
 
-CodeGenResult CodegenCPP::generateSystem(SystemSchema system)
+CodeGenResult CodegenCPP::generateSystem(SystemSchema system, const HashMap<String, ComponentSchema>& components)
 {
-	String className = system.name + "System";
+	const String className = system.name + "System";
 
 	CodeGenResult result;
-	result.emplace_back(CodeGenFile(makePath("systems", className, "h"), generateSystemHeader(system)));
+	result.emplace_back(CodeGenFile(makePath("systems", className, "h"), generateSystemHeader(system, components)));
 	//result.emplace_back(CodeGenFile(makePath("../../src/systems", className, "cpp"), generateSystemStub(system), true));
 	return result;
 }
 
 CodeGenResult CodegenCPP::generateMessage(MessageSchema message)
 {
-	String className = message.name + "Message";
+	const String className = message.name + "Message";
 
 	CodeGenResult result;
 	result.emplace_back(CodeGenFile(makePath("messages", className, "h"), generateMessageHeader(message)));
@@ -95,14 +58,23 @@ CodeGenResult CodegenCPP::generateRegistry(const Vector<ComponentSchema>& compon
 	Vector<String> registryCpp {
 		"#include <halley.hpp>",
 		"using namespace Halley;",
+		""
+	};
+
+	for (auto& comp: components) {
+		registryCpp.emplace_back("#include \"" + getComponentFileName(comp) + "\"");
+	}
+	
+	registryCpp.insert(registryCpp.end(), {
 		"",
 		"// System factory functions"
-	};
+	});
 
 	for (auto& sys: systems) {
 		registryCpp.push_back("System* halleyCreate" + sys.name + "System();");
 	}
 
+	// System factory
 	registryCpp.insert(registryCpp.end(), {
 		"",
 		"",
@@ -119,7 +91,31 @@ CodeGenResult CodegenCPP::generateRegistry(const Vector<ComponentSchema>& compon
 
 	registryCpp.insert(registryCpp.end(), {
 		"	return result;",
-		"}",
+		"}"
+	});
+
+	// Component factory
+	registryCpp.insert(registryCpp.end(), {
+		"",
+		"",
+		"using ComponentFactoryPtr = std::function<CreateComponentFunctionResult(EntityFactory&, EntityRef&, const ConfigNode&)>;",
+		"using ComponentFactoryMap = HashMap<String, ComponentFactoryPtr>;",
+		"",
+		"static ComponentFactoryMap makeComponentFactories() {",
+		"	ComponentFactoryMap result;"
+	});
+
+	for (auto& comp : components) {
+		registryCpp.push_back("	result[\"" + comp.name + "\"] = [] (EntityFactory& factory, EntityRef& e, const ConfigNode& node) -> CreateComponentFunctionResult { return factory.createComponent<" + comp.name + "Component>(e, node); };");
+	}
+
+	registryCpp.insert(registryCpp.end(), {
+		"	return result;",
+		"}"
+	});
+
+	// Create system and component methods
+	registryCpp.insert(registryCpp.end(), {
 		"",
 		"namespace Halley {",
 		"	std::unique_ptr<System> createSystem(String name) {",
@@ -130,15 +126,22 @@ CodeGenResult CodegenCPP::generateRegistry(const Vector<ComponentSchema>& compon
 		"		}",
 		"		return std::unique_ptr<System>(result->second());",
 		"	}",
+		"",
+		"   CreateComponentFunctionResult createComponent(EntityFactory& factory, const String& name, EntityRef& entity, const ConfigNode& componentData) {",
+		"		static ComponentFactoryMap factories = makeComponentFactories();",
+		"		auto result = factories.find(name);",
+		"		if (result == factories.end()) {",
+		"			throw Exception(\"Component not found: \" + name, HalleyExceptions::Entity);",
+		"		}",
+		"		return result->second(factory, entity, componentData);",
+		"   }",
 		"}"
 	});
 
 	Vector<String> registryH{
 		"#pragma once",
 		"",
-		"namespace Halley {",
-		"	std::unique_ptr<System> createSystem(String name);",
-		"}"
+		"#include <halley/entity/registry.h>"
 	};
 
 	CodeGenResult result;
@@ -152,7 +155,9 @@ Vector<String> CodegenCPP::generateComponentHeader(ComponentSchema component)
 	Vector<String> contents = {
 		"#pragma once",
 		"",
+		"#ifndef DONT_INCLUDE_HALLEY_HPP",
 		"#include <halley.hpp>",
+		"#endif"
 		""
 	};
 
@@ -161,18 +166,46 @@ Vector<String> CodegenCPP::generateComponentHeader(ComponentSchema component)
 	}
 	contents.push_back("");
 
-	auto gen = CPPClassGenerator(component.name + "Component", "Halley::Component", CPPAccess::Public, true)
-		.addAccessLevelSection(CPPAccess::Public)
-		.addMember(VariableSchema(TypeSchema("int", false, true, true), "componentIndex", toString(component.id)))
+	String deserializeBody;
+	bool first = true;
+	for (auto& member: component.members) {
+		if (!member.serializable) {
+			continue;
+		}
+		
+		if (first) {
+			first = false;
+		} else {
+			if constexpr (getPlatform() == GamePlatform::Windows) {
+				deserializeBody += "\r\n\t\t";
+			} else {
+				deserializeBody += "\n\t\t";
+			}
+		}
+		deserializeBody += "Halley::ConfigNodeHelper::deserializeIfDefined(" + member.name + ", context, node[\"" + member.name + "\"]);";
+	}
+
+	String className = component.name + "Component" + (component.customImplementation ? "Base" : "");
+	
+	auto gen = CPPClassGenerator(className, "Halley::Component", MemberAccess::Public, !component.customImplementation)
+		.addAccessLevelSection(MemberAccess::Public)
+		.addMember(MemberSchema(TypeSchema("int", false, true, true), "componentIndex", toString(component.id)))
 		.addBlankLine()
 		.addMembers(component.members)
 		.addBlankLine()
+		.addAccessLevelSection(MemberAccess::Public)
 		.addDefaultConstructor();
 
+	// Additional constructors
 	if (!component.members.empty()) {
+		
 		gen.addBlankLine()
-			.addConstructor(component.members);
+			.addConstructor(MemberSchema::toVariableSchema(component.members));
 	}
+	
+	// Deserialize method
+	gen.addBlankLine()
+		.addMethodDefinition(MethodSchema(TypeSchema("void"), { VariableSchema(TypeSchema("Halley::ConfigNodeSerializationContext&"), "context"), VariableSchema(TypeSchema("Halley::ConfigNode&", true), "node") }, "deserialize"), deserializeBody);
 
 	gen.finish()
 		.writeTo(contents);
@@ -235,7 +268,7 @@ public:
 	bool methodConst;
 };
 
-Vector<String> CodegenCPP::generateSystemHeader(SystemSchema& system) const
+Vector<String> CodegenCPP::generateSystemHeader(SystemSchema& system, const HashMap<String, ComponentSchema>& components) const
 {
 	auto info = SystemInfo(system);
 
@@ -257,8 +290,11 @@ Vector<String> CodegenCPP::generateSystemHeader(SystemSchema& system) const
 	for (auto& fam : system.families) {
 		for (auto& comp : fam.components) {
 			if (included.find(comp.name) == included.end()) {
-				contents.emplace_back("#include \"../components/" + toFileName(comp.name + "Component") + ".h\"");
-				included.emplace(comp.name);
+				auto iter = components.find(comp.name);
+				if (iter != components.end()) {
+					contents.emplace_back("#include \"" + getComponentFileName(iter->second) + "\"");
+					included.emplace(comp.name);
+				}
 			}
 		}
 	}
@@ -272,21 +308,21 @@ Vector<String> CodegenCPP::generateSystemHeader(SystemSchema& system) const
 		"template <typename T>"
 	});
 
-	auto sysClassGen = CPPClassGenerator(system.name + "SystemBase", "Halley::System", CPPAccess::Private)
+	auto sysClassGen = CPPClassGenerator(system.name + "SystemBase", "Halley::System", MemberAccess::Private)
 		.addMethodDeclaration(MethodSchema(TypeSchema("Halley::System*"), {}, "halleyCreate" + system.name + "System", false, false, false, false, true))
 		.addBlankLine()
-		.addAccessLevelSection(CPPAccess::Public);
+		.addAccessLevelSection(MemberAccess::Public);
 
 	for (auto& fam : system.families) {
-		auto members = convert<ComponentReferenceSchema, VariableSchema>(fam.components, [](auto& comp)
+		auto members = convert<ComponentReferenceSchema, MemberSchema>(fam.components, [](auto& comp)
 		{
 			String type = comp.optional ? "Halley::MaybeRef<" + comp.name + "Component>" : comp.name + "Component&";
-			return VariableSchema(TypeSchema(type, !comp.write), lowerFirst(comp.name));
+			return MemberSchema(TypeSchema(type, !comp.write), lowerFirst(comp.name));
 		});
 
 		sysClassGen
 			.addClass(CPPClassGenerator(upperFirst(fam.name) + "Family", "Halley::FamilyBaseOf<" + upperFirst(fam.name) + "Family>")
-				.addAccessLevelSection(CPPAccess::Public)
+				.addAccessLevelSection(MemberAccess::Public)
 				.addMembers(members)
 				.addBlankLine()
 				.addTypeDefinition("Type", "Halley::FamilyType<" + String::concatList(convert<ComponentReferenceSchema, String>(fam.components, [](auto& comp)
@@ -294,13 +330,13 @@ Vector<String> CodegenCPP::generateSystemHeader(SystemSchema& system) const
 					return comp.optional ? "Halley::MaybeRef<" + comp.name + "Component>" : comp.name + "Component";
 				}), ", ") + ">")
 				.addBlankLine()
-				.addAccessLevelSection(CPPAccess::Protected)
-				.addConstructor(members)
+				.addAccessLevelSection(MemberAccess::Protected)
+				.addConstructor(MemberSchema::toVariableSchema(members))
 				.finish())
 			.addBlankLine();
 	}
 
-	sysClassGen.addAccessLevelSection(CPPAccess::Protected);
+	sysClassGen.addAccessLevelSection(MemberAccess::Protected);
 
 	if ((int(system.access) & int(SystemAccess::API)) != 0) {
 		sysClassGen.addMethodDefinition(MethodSchema(TypeSchema("const Halley::HalleyAPI&"), {}, "getAPI", true), "return doGetAPI();");
@@ -309,7 +345,7 @@ Vector<String> CodegenCPP::generateSystemHeader(SystemSchema& system) const
 		sysClassGen.addMethodDefinition(MethodSchema(TypeSchema("Halley::World&"), {}, "getWorld", true), "return doGetWorld();");
 	}
 	if ((int(system.access) & int(SystemAccess::Resources)) != 0) {
-		sysClassGen.addMethodDefinition(MethodSchema(TypeSchema("Halley::Resources&"), {}, "getResources", true), "return doGetAPI().core->getResources();");
+		sysClassGen.addMethodDefinition(MethodSchema(TypeSchema("Halley::Resources&"), {}, "getResources", true), "return doGetResources();");
 	}
 
 	// Receive messages
@@ -328,14 +364,14 @@ Vector<String> CodegenCPP::generateSystemHeader(SystemSchema& system) const
 	// Service declarations
 	for (auto& service: system.services) {
 		sysClassGen.addBlankLine();
-		sysClassGen.addMember(VariableSchema(service.name + "*", lowerFirst(service.name), "nullptr"));
+		sysClassGen.addMember(MemberSchema(service.name + "*", lowerFirst(service.name), "nullptr"));
 		sysClassGen.addMethodDefinition(MethodSchema(TypeSchema(service.name + "&"), {}, "get" + service.name, true), "return *" + lowerFirst(service.name) + ";");
 	}
 
 	// Construct initBase();
 	std::vector<String> initBaseMethodBody;
 	for (auto& service: system.services) {
-		initBaseMethodBody.push_back(lowerFirst(service.name) + " = &doGetWorld().template getService<" + service.name + ">();");
+		initBaseMethodBody.push_back(lowerFirst(service.name) + " = &doGetWorld().template getService<" + service.name + ">(getName());");
 	}
 	initBaseMethodBody.push_back("invokeInit<T>(static_cast<T*>(this));");
 	for (auto& family: system.families) {
@@ -343,18 +379,18 @@ Vector<String> CodegenCPP::generateSystemHeader(SystemSchema& system) const
 	}
 	sysClassGen.addMethodDefinition(MethodSchema(TypeSchema("void"), {}, "initBase", false, false, true), initBaseMethodBody);
 
-	auto fams = convert<FamilySchema, VariableSchema>(system.families, [](auto& fam) { return VariableSchema(TypeSchema("Halley::FamilyBinding<" + upperFirst(fam.name) + "Family>"), fam.name + "Family"); });
+	auto fams = convert<FamilySchema, MemberSchema>(system.families, [](auto& fam) { return MemberSchema(TypeSchema("Halley::FamilyBinding<" + upperFirst(fam.name) + "Family>"), fam.name + "Family"); });
 	auto mid = fams.begin() + std::min(fams.size(), size_t(1));
-	std::vector<VariableSchema> mainFams(fams.begin(), mid);
-	std::vector<VariableSchema> otherFams(mid, fams.end());
+	std::vector<MemberSchema> mainFams(fams.begin(), mid);
+	std::vector<MemberSchema> otherFams(mid, fams.end());
 	sysClassGen
 		.addBlankLine()
-		.addAccessLevelSection(system.strategy == SystemStrategy::Global ? CPPAccess::Protected : CPPAccess::Private)
+		.addAccessLevelSection(system.strategy == SystemStrategy::Global ? MemberAccess::Protected : MemberAccess::Private)
 		.addMembers(mainFams)
-		.addAccessLevelSection(CPPAccess::Protected)
+		.addAccessLevelSection(MemberAccess::Protected)
 		.addMembers(otherFams)
 		.addBlankLine()
-		.addAccessLevelSection(CPPAccess::Private)
+		.addAccessLevelSection(MemberAccess::Private)
 		.addMethodDefinition(MethodSchema(TypeSchema("void"), { VariableSchema(TypeSchema(info.methodArgType), info.methodArgName) }, info.methodName + "Base", false, false, true, true), info.stratImpl)
 		.addBlankLine();
 
@@ -375,7 +411,7 @@ Vector<String> CodegenCPP::generateSystemHeader(SystemSchema& system) const
 	}
 
 	sysClassGen
-		.addAccessLevelSection(CPPAccess::Public)
+		.addAccessLevelSection(MemberAccess::Public)
 		.addCustomConstructor({}, { VariableSchema(TypeSchema(""), "System", "{" + String::concatList(convert<FamilySchema, String>(system.families, [](auto& fam) { return "&" + fam.name + "Family"; }), ", ") + "}, {" + String::concatList(msgsReceived, ", ") + "}") })
 		.finish()
 		.writeTo(contents);
@@ -395,8 +431,8 @@ Vector<String> CodegenCPP::generateSystemStub(SystemSchema& system) const
 		""
 	};
 
-	auto actualSys = CPPClassGenerator(systemName, systemName + "Base<" + systemName + ">", CPPAccess::Public, true)
-		.addAccessLevelSection(CPPAccess::Public)
+	auto actualSys = CPPClassGenerator(systemName, systemName + "Base<" + systemName + ">", MemberAccess::Public, true)
+		.addAccessLevelSection(MemberAccess::Public)
 		.addMethodDefinition(MethodSchema(TypeSchema("void"), info.familyArgs, info.methodName, info.methodConst), "// TODO");
 
 	for (auto& msg : system.messages) {
@@ -434,9 +470,9 @@ Vector<String> CodegenCPP::generateMessageHeader(MessageSchema message)
 	}
 	contents.push_back("");
 
-	auto gen = CPPClassGenerator(message.name + "Message", "Halley::Message", CPPAccess::Public, true)
-		.addAccessLevelSection(CPPAccess::Public)
-		.addMember(VariableSchema(TypeSchema("int", false, true, true), "messageIndex", toString(message.id)))
+	auto gen = CPPClassGenerator(message.name + "Message", "Halley::Message", MemberAccess::Public, true)
+		.addAccessLevelSection(MemberAccess::Public)
+		.addMember(MemberSchema(TypeSchema("int", false, true, true), "messageIndex", toString(message.id)))
 		.addBlankLine()
 		.addMembers(message.members)
 		.addBlankLine()
@@ -444,7 +480,7 @@ Vector<String> CodegenCPP::generateMessageHeader(MessageSchema message)
 		.addBlankLine();
 
 	if (!message.members.empty()) {
-		gen.addConstructor(message.members)
+		gen.addConstructor(MemberSchema::toVariableSchema(message.members))
 			.addBlankLine();
 	}
 
@@ -453,4 +489,51 @@ Vector<String> CodegenCPP::generateMessageHeader(MessageSchema message)
 		.writeTo(contents);
 
 	return contents;
+}
+
+Path CodegenCPP::makePath(Path dir, String className, String extension) const
+{
+	return dir / (toFileName(className) + "." + extension).cppStr();
+}
+
+String CodegenCPP::toFileName(String className) const
+{
+	std::stringstream ss;
+
+	auto isUpper = [](char c) {
+		return c >= 'A' && c <= 'Z';
+	};
+
+	auto lower = [](char c) {
+		return static_cast<char>(c + 32);
+	};
+
+	auto tryGet = [](const String& s, size_t i) {
+		if (s.size() > i) {
+			return s[i];
+		} else {
+			return char(0);
+		}
+	};
+
+	for (size_t i = 0; i < className.size(); i++) {
+		if (isUpper(className[i])) {
+			if (i > 0 && !isUpper(tryGet(className, i+1))) {
+				ss << '_';
+			}
+			ss << lower(className[i]);
+		} else {
+			ss << className[i];
+		}
+	}
+	return ss.str();
+}
+
+String CodegenCPP::getComponentFileName(const ComponentSchema& component) const
+{
+	if (component.customImplementation) {
+		return component.customImplementation.value();
+	} else {
+		return "components/" + toFileName(component.name + "Component") + ".h";
+	}
 }

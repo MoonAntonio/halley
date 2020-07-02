@@ -280,18 +280,25 @@ String OSWin32::getCurrentWorkingDir()
 String OSWin32::getEnvironmentVariable(const String& name)
 {
 	auto bufferSize = GetEnvironmentVariable(name.c_str(), nullptr, 0);
+	if (bufferSize == 0) {
+		return String();
+	}
 	std::string buffer(bufferSize - 1, 0);
 	GetEnvironmentVariable(name.c_str(), &buffer[0], bufferSize);
 	return buffer;
 }
 
-Path OSWin32::parseProgramPath(const String&)
+Path OSWin32::parseProgramPath(const String& path)
 {
-	HMODULE hModule = GetModuleHandleW(nullptr);
-	WCHAR path[MAX_PATH];
-	GetModuleFileNameW(hModule, path, MAX_PATH);
-	String programPath(path);
-	return Path(programPath).parentPath() / ".";
+	if (path.endsWith(".dll")) {
+		return Path(path).parentPath();
+	} else {
+		HMODULE hModule = GetModuleHandleW(nullptr);
+		WCHAR path[MAX_PATH];
+		GetModuleFileNameW(hModule, path, MAX_PATH);
+		String programPath(path);
+		return Path(programPath).parentPath() / ".";
+	}
 }
 
 void Halley::OSWin32::setConsoleColor(int foreground, int background)
@@ -377,13 +384,13 @@ static void writeFile(const wchar_t* str, const Bytes& data)
 	}
 }
 
-void OSWin32::atomicWriteFile(const Path& path, const Bytes& data, Maybe<Path> backupOldVersionPath)
+void OSWin32::atomicWriteFile(const Path& path, const Bytes& data, std::optional<Path> backupOldVersionPath)
 {
 	auto dstPath = path.getString().replaceAll("/", "\\").getUTF16();
 	if (PathFileExistsW(dstPath.c_str())) {
 		auto temp = path.replaceExtension(path.getExtension() + ".tmp");
 		auto tempPath = temp.getString().replaceAll("/", "\\").getUTF16();
-		auto backupPath = backupOldVersionPath ? backupOldVersionPath.get().getString().replaceAll("/", "\\").getUTF16() : StringUTF16();
+		auto backupPath = backupOldVersionPath ? backupOldVersionPath->getString().replaceAll("/", "\\").getUTF16() : StringUTF16();
 		writeFile(tempPath.c_str(), data);
 
 		const int result = ReplaceFileW(dstPath.c_str(), tempPath.c_str(), backupOldVersionPath ? backupPath.c_str() : nullptr, REPLACEFILE_IGNORE_MERGE_ERRORS, nullptr, nullptr);
@@ -579,7 +586,7 @@ public:
 		CloseClipboard();
 	}
 
-	Maybe<String> getStringData() override
+	std::optional<String> getStringData() override
 	{
 		if (!OpenClipboard(nullptr)) {
 			throw Exception("Unable to open clipboard.", HalleyExceptions::OS);

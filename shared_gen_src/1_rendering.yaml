@@ -1,0 +1,50 @@
+---
+
+component:
+  name: Sprite
+  members:
+  - sprite: 'Halley::Sprite'
+  - layer:
+      type: int
+      defaultValue: 0
+  - mask:
+      type: int
+      defaultValue: -1
+
+---
+
+component:
+  name: TextLabel
+  members:
+  - text: 'Halley::TextRenderer'
+  - layer:
+      type: int
+      defaultValue: 0
+  - mask:
+      type: int
+      defaultValue: 1
+
+---
+
+component:
+  name: SpriteAnimation
+  members:
+  - player: 'Halley::AnimationPlayer'
+
+---
+
+component:
+  name: Camera
+  members:
+  - zoom:
+      type: float
+      defaultValue: 1
+  - clear: 'std::optional<Halley::Colour4f>'
+  - mask:
+      type: int
+      defaultValue: 1
+  - layer:
+      type: int
+      defaultValue: 0
+
+...

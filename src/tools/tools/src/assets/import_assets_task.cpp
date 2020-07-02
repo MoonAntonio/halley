@@ -70,9 +70,17 @@ void ImportAssetsTask::run()
 		setProgress(1.0f, "");
 
 		if (!hasError()) {
-			Concurrent::execute(Executors::getMainThread(), [project = &project, assets = outputAssets] () {
-				project->reloadAssets(assets, false);
-			});
+			if (!outputAssets.empty()) {
+				Concurrent::execute(Executors::getMainThread(), [project = &project, assets = outputAssets] () {
+					project->reloadAssets(assets, false);
+				});
+			}
+
+			if (files.size() == 1 && files[0].assetId == ":codegen") {
+				Concurrent::execute(Executors::getMainThread(), [project = &project]() {
+					project->reloadCodegen();
+				});
+			}
 
 			if (packAfter) {
 				addContinuation(EditorTaskAnchor(std::make_unique<AssetPackerTask>(project, std::move(outputAssets), std::move(deletedAssets))));
@@ -104,7 +112,7 @@ bool ImportAssetsTask::importAsset(ImportAssetsDatabaseEntry& asset)
 		importingAsset.assetType = asset.assetType;
 		for (auto& f: asset.inputFiles) {
 			auto meta = db.getMetadata(f.first);
-			importingAsset.inputFiles.emplace_back(ImportingAssetFile(f.first, FileSystem::readFile(asset.srcDir / f.first), meta ? meta.get() : Metadata()));
+			importingAsset.inputFiles.emplace_back(ImportingAssetFile(f.first, FileSystem::readFile(asset.srcDir / f.first), meta ? meta.value() : Metadata()));
 		}
 		toLoad.emplace_back(std::move(importingAsset));
 

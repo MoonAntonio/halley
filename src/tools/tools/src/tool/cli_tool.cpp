@@ -9,6 +9,7 @@
 #include "halley/core/game/halley_statics.h"
 #include "halley/tools/vs_project/vs_project_tool.h"
 #include "halley/tools/packer/asset_pack_inspector.h"
+#include "halley/tools/runner/runner_tool.h"
 
 using namespace Halley;
 
@@ -21,6 +22,7 @@ CommandLineTools::CommandLineTools()
 	factories["pack"] = []() { return std::make_unique<AssetPackerTool>(); };
 	factories["pack-inspector"] = []() { return std::make_unique<AssetPackInspectorTool>(); };
 	factories["vs_project"] = []() { return std::make_unique<VSProjectTool>(); };
+	factories["run"] = []() { return std::make_unique<RunnerTool>(); };
 }
 
 Vector<std::string> CommandLineTools::getToolNames()
@@ -48,16 +50,10 @@ CommandLineTool::~CommandLineTool()
 
 int CommandLineTool::runRaw(int argc, char** argv)
 {
-	platforms = std::vector<String>{"pc"};
-
 	Vector<std::string> args;
 	for (int i = 2; i < argc; i++) {
 		String arg = argv[i];
-		if (arg.startsWith("--")) {
-			if (arg.startsWith("--platforms=")) {
-				platforms = arg.mid(12).split(',');
-			}
-		} else {
+		if (!arg.startsWith("--")) {
 			args.push_back(arg.cppStr());
 		}
 	}
@@ -69,4 +65,9 @@ int CommandLineTool::runRaw(int argc, char** argv)
 	env.parseProgramPath(argv[0]);
 
 	return run(args);
+}
+
+int CommandLineTool::run(Vector<std::string> args)
+{
+	throw Exception("Tool's run() method not implemented", HalleyExceptions::Tools);
 }

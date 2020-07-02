@@ -16,6 +16,7 @@ void MetalTexture::load(TextureDescriptor&& descriptor)
 	int bytesPerPixel = 0;
 	switch (descriptor.format) {
 		case TextureFormat::Indexed:
+		case TextureFormat::Red:
 			pixelFormat = MTLPixelFormatR8Unorm;
 			bytesPerPixel = 1;
 			break;
@@ -59,10 +60,10 @@ void MetalTexture::load(TextureDescriptor&& descriptor)
 	samplerDescriptor.minFilter = filter;
 	samplerDescriptor.magFilter = filter;
 	samplerDescriptor.mipFilter = descriptor.useFiltering ? MTLSamplerMipFilterLinear : MTLSamplerMipFilterNearest;
-	auto clamp = descriptor.clamp ? MTLSamplerAddressModeClampToEdge : MTLSamplerAddressModeRepeat;
-	samplerDescriptor.sAddressMode = clamp;
-	samplerDescriptor.rAddressMode = clamp;
-	samplerDescriptor.tAddressMode = clamp;
+	auto addressMode = getMetalAddressMode(descriptor);
+	samplerDescriptor.sAddressMode = addressMode;
+	samplerDescriptor.rAddressMode = addressMode;
+	samplerDescriptor.tAddressMode = addressMode;
 	samplerDescriptor.lodMinClamp = 0;
 	samplerDescriptor.lodMaxClamp = FLT_MAX;
 	sampler = [video.getDevice() newSamplerStateWithDescriptor:samplerDescriptor];
@@ -71,10 +72,22 @@ void MetalTexture::load(TextureDescriptor&& descriptor)
 	doneLoading();
 }
 
-void MetalTexture::bind(id<MTLRenderCommandEncoder> encoder, int bindIndex) const {
+void MetalTexture::bind(id<MTLRenderCommandEncoder> encoder, int bindIndex) const
+{
 	waitForLoad();
 
 	[encoder setFragmentTexture:metalTexture atIndex:bindIndex];
 	[encoder setFragmentSamplerState:sampler atIndex:bindIndex];
 }
 
+MTLSamplerAddressMode MetalTexture::getMetalAddressMode(TextureDescriptor& descriptor)
+{
+	switch (descriptor.addressMode) {
+	case TextureAddressMode::Clamp:
+		return MTLSamplerAddressModeClampToEdge;
+	case TextureAddressMode::Mirror:
+		return MTLSamplerAddressModeMirrorRepeat;
+	case TextureAddressMode::Repeat:
+		return MTLSamplerAddressModeRepeat;
+	}
+}

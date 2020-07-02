@@ -11,17 +11,19 @@ namespace Halley
 		Indexed,
 		RGB,
 		RGBA,
-		DEPTH
+		DEPTH,
+		Red
 	};
 
 	template <>
 	struct EnumNames<TextureFormat> {
-		constexpr std::array<const char*, 4> operator()() const {
+		constexpr std::array<const char*, 5> operator()() const {
 			return{{
 				"indexed",
 				"rgb",
 				"rgba",
-				"depth"
+				"depth",
+				"red"
 			}};
 		}
 	};
@@ -56,9 +58,9 @@ namespace Halley
 	public:
 		TextureDescriptorImageData();
 		TextureDescriptorImageData(std::unique_ptr<Image> img);
-		TextureDescriptorImageData(Bytes&& bytes, Maybe<int> stride = {});
+		TextureDescriptorImageData(Bytes&& bytes, std::optional<int> stride = {});
 		TextureDescriptorImageData(TextureDescriptorImageData&& other) noexcept;
-		TextureDescriptorImageData(gsl::span<const gsl::byte> bytes, Maybe<int> stride = {});
+		TextureDescriptorImageData(gsl::span<const gsl::byte> bytes, std::optional<int> stride = {});
 
 		TextureDescriptorImageData& operator=(TextureDescriptorImageData&& other) noexcept;
 
@@ -68,13 +70,13 @@ namespace Halley
 
 		Bytes moveBytes();
 
-		Maybe<int> getStride() const;
+		std::optional<int> getStride() const;
 		int getStrideOr(int assumedStride) const;
 
 	private:
 		std::unique_ptr<Image> img;
 		Bytes rawBytes;
-		Maybe<int> stride;
+		std::optional<int> stride;
 		bool isRaw = false;
 	};
 

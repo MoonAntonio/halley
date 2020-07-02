@@ -9,17 +9,21 @@
 #include "halley/maths/vector3.h"
 #include <memory>
 
+#include "halley/data_structures/ring_buffer.h"
+
 namespace Halley
 {
 	class AudioPosition;
 	class AudioClip;
 	class AudioEvent;
 	class IAudioClip;
-	class AudioEmitterBehaviour;
+	class AudioVoiceBehaviour;
+	class AudioEngine;
 
     namespace AudioConfig {
         constexpr int sampleRate = 48000;
 		constexpr int maxChannels = 8;
+    	constexpr int maxVoices = 128;
         using SampleFormat = float;
     }
 
@@ -59,10 +63,10 @@ namespace Halley
 	class AudioSpec
 	{
 	public:
-		int sampleRate;
-		int numChannels;
-		int bufferSize;
-		AudioSampleFormat format;
+		int sampleRate = 0;
+		int numChannels = 0;
+		int bufferSize = 0;
+		AudioSampleFormat format = AudioSampleFormat::Undefined;
 
 		AudioSpec() {}
 		AudioSpec(int sampleRate, int numChannels, int bufferSize, AudioSampleFormat format)
@@ -95,10 +99,19 @@ namespace Halley
 
 	using AudioCallback = std::function<void()>;
 
-	class AudioOutputAPI
+	class IAudioOutput
 	{
 	public:
-		virtual ~AudioOutputAPI() {}
+		virtual ~IAudioOutput() = default;
+		
+		virtual size_t getAvailable() = 0;
+		virtual size_t output(gsl::span<gsl::byte> dst, bool padWithZeroes) = 0;
+	};
+
+	class AudioOutputAPI
+	{
+	public:		
+		virtual ~AudioOutputAPI() = default;
 
 		virtual Vector<std::unique_ptr<const AudioDevice>> getAudioDevices() = 0;
 		virtual AudioSpec openAudioDevice(const AudioSpec& requestedFormat, const AudioDevice* device = nullptr, AudioCallback prepareAudioCallback = AudioCallback()) = 0;
@@ -107,10 +120,27 @@ namespace Halley
 		virtual void startPlayback() = 0;
 		virtual void stopPlayback() = 0;
 
-		virtual void queueAudio(gsl::span<const float> data) = 0;
-		virtual bool needsMoreAudio() = 0;
+		virtual void onAudioAvailable() = 0;
 
+		virtual bool needsMoreAudio() = 0;
 		virtual bool needsAudioThread() const = 0;
+		virtual bool needsInterleavedSamples() const { return true; }
+
+	protected:
+		static size_t getAudioBytesNeeded(const AudioSpec& outputSpec, size_t nBuffers)
+		{
+			const size_t sizePerSample = outputSpec.format == AudioSampleFormat::Int16 ? 2 : 4;
+			return nBuffers * outputSpec.bufferSize * outputSpec.numChannels * sizePerSample;
+		}
+		
+		IAudioOutput& getAudioOutputInterface() const { return *audioOutputInterface; }
+		
+	private:
+		friend class AudioEngine;
+		
+		IAudioOutput* audioOutputInterface = nullptr;
+		
+		void setAudioOutputInterface(IAudioOutput& aoInterface) { audioOutputInterface = &aoInterface; }
 	};
 
 	class IAudioHandle
@@ -125,7 +155,7 @@ namespace Halley
 
 		virtual void stop(float fadeTime = 0.0f) = 0;
 		virtual bool isPlaying() const = 0;
-		virtual void setBehaviour(std::unique_ptr<AudioEmitterBehaviour> behaviour) = 0;
+		virtual void setBehaviour(std::unique_ptr<AudioVoiceBehaviour> behaviour) = 0;
 	};
 	using AudioHandle = std::shared_ptr<IAudioHandle>;
 

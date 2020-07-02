@@ -25,6 +25,7 @@ namespace Halley
 		using WidgetFactory = std::function<std::shared_ptr<UIWidget>(const ConfigNode&)>;
 
 		UIFactory(const HalleyAPI& api, Resources& resources, const I18N& i18n, std::shared_ptr<UIStyleSheet> styleSheet);
+		~UIFactory();
 
 		void addFactory(const String& key, WidgetFactory factory);
 		
@@ -42,6 +43,9 @@ namespace Halley
 		std::shared_ptr<UIStyleSheet> getStyleSheet() const;
 
 		Resources& getResources() const;
+		std::shared_ptr<InputKeyboard> getKeyboard() const;
+
+		UIFactory withResources(Resources& newResources) const;
 
 	protected:
 		struct ParsedOption {
@@ -63,13 +67,13 @@ namespace Halley
 
 		std::shared_ptr<UIWidget> makeWidget(const ConfigNode& node);
 		std::shared_ptr<UISizer> makeSizerPtr(const ConfigNode& node);
-		Maybe<UISizer> makeSizer(const ConfigNode& node);
+		std::optional<UISizer> makeSizer(const ConfigNode& node);
 		UISizer makeSizerOrDefault(const ConfigNode& node, UISizer&& defaultSizer);
 		void loadSizerChildren(UISizer& sizer, const ConfigNode& node);
 
-		static Maybe<Vector2f> asMaybeVector2f(const ConfigNode& node);
-		static Vector2f asVector2f(const ConfigNode& node, Maybe<Vector2f> defaultValue);
-		static Vector4f asVector4f(const ConfigNode& node, Maybe<Vector4f> defaultValue);
+		static std::optional<Vector2f> asMaybeVector2f(const ConfigNode& node);
+		static Vector2f asVector2f(const ConfigNode& node, std::optional<Vector2f> defaultValue);
+		static Vector4f asVector4f(const ConfigNode& node, std::optional<Vector4f> defaultValue);
 		LocalisedString parseLabel(const ConfigNode& node, const String& defaultOption = "", const String& key = "text");
 		std::vector<ParsedOption> parseOptions(const ConfigNode& node);
 
@@ -95,6 +99,7 @@ namespace Halley
 		std::shared_ptr<UIWidget> makeHybridList(const ConfigNode& entryNode);
 		std::shared_ptr<UIWidget> makeSpinList(const ConfigNode& entryNode);
 		std::shared_ptr<UIWidget> makeOptionListMorpher(const ConfigNode& entryNode);
+		std::shared_ptr<UIWidget> makeTreeList(const ConfigNode& node);
 
 		bool hasCondition(const String& condition) const;
 		bool resolveConditions(const ConfigNode& node) const;

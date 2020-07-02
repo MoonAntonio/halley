@@ -1,5 +1,6 @@
 #include "widgets/ui_scroll_pane.h"
 #include "ui_style.h"
+#include "halley/support/logger.h"
 
 using namespace Halley;
 
@@ -84,6 +85,7 @@ bool UIScrollPane::canScroll(UIScrollDirection direction) const
 
 float UIScrollPane::getCoverageSize(UIScrollDirection direction) const
 {
+	auto contentsSize = UIWidget::getLayoutMinimumSize(false);
 	if (direction == UIScrollDirection::Horizontal) {
 		return getSize().x / contentsSize.x;
 	} else {
@@ -91,7 +93,17 @@ float UIScrollPane::getCoverageSize(UIScrollDirection direction) const
 	}
 }
 
-void UIScrollPane::refresh()
+void UIScrollPane::setScrollWheelEnabled(bool enabled)
+{
+	scrollWheelEnabled = enabled;
+}
+
+bool UIScrollPane::isScrollWheelEnabled() const
+{
+	return scrollWheelEnabled;
+}
+
+void UIScrollPane::refresh(bool force)
 {
 	if (!scrollHorizontal) {
 		clipSize.x = getSize().x;
@@ -102,7 +114,9 @@ void UIScrollPane::refresh()
 		scrollPos.y = 0;
 	}
 	contentsSize = UIWidget::getLayoutMinimumSize(false);
-	setMouseClip(getRect());
+
+	setMouseClip(getRect(), force);
+	scrollTo(getScrollPosition());
 }
 
 
@@ -129,9 +143,16 @@ bool UIScrollPane::canInteractWithMouse() const
 	return true;
 }
 
+void UIScrollPane::onLayout()
+{
+	refresh();
+}
+
 void UIScrollPane::onMouseWheel(const UIEvent& event)
 {
-	scrollBy(Vector2f(0.0f, -scrollSpeed * event.getIntData()));
+	if (scrollWheelEnabled) {
+		scrollBy(Vector2f(0.0f, -scrollSpeed * float(event.getIntData())));
+	}
 }
 
 Vector2f UIScrollPane::getBasePosition(const String& widgetId)
@@ -174,10 +195,10 @@ void UIScrollPane::setRelativeScroll(float position, UIScrollDirection direction
 	scrollTo(target);
 }
 
-Maybe<float> UIScrollPane::getMaxChildWidth() const
+std::optional<float> UIScrollPane::getMaxChildWidth() const
 {
 	if (scrollHorizontal) {
-		return Maybe<float>();
+		return std::optional<float>();
 	} else {
 		return getSize().x;
 	}
@@ -186,4 +207,14 @@ Maybe<float> UIScrollPane::getMaxChildWidth() const
 bool UIScrollPane::ignoreClip() const
 {
 	return true;
+}
+
+void UIScrollPane::onChildrenAdded()
+{
+	refresh(true);
+}
+
+void UIScrollPane::onChildrenRemoved()
+{
+	refresh(true);
 }

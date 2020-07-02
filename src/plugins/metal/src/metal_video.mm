@@ -1,4 +1,4 @@
-﻿#include "metal_material_constant_buffer.h"
+#include "metal_material_constant_buffer.h"
 #include "metal_painter.h"
 #include "metal_render_target.h"
 #include "metal_texture.h"
@@ -30,13 +30,14 @@ void MetalVideo::deInit()
 
 void MetalVideo::startRender()
 {
+	pool = [[NSAutoreleasePool alloc] init];
 	surface = [swap_chain nextDrawable];
 }
 
 void MetalVideo::finishRender()
 {
 	window->swap();
-	[surface release];
+	[pool release];
 }
 
 
@@ -100,6 +101,11 @@ std::unique_ptr<MaterialConstantBuffer> MetalVideo::createConstantBuffer()
 String MetalVideo::getShaderLanguage()
 {
 	return "metal";
+}
+
+bool MetalVideo::isColumnMajor() const
+{
+	return true;
 }
 
 std::unique_ptr<Painter> MetalVideo::makePainter(Resources& resources)

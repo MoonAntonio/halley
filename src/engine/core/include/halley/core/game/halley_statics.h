@@ -3,7 +3,8 @@
 
 namespace Halley
 {
-	class HalleyStaticsPimpl;
+	class HalleyStaticsShared;
+	class HalleyStaticsPrivate;
 	class SystemAPI;
 
 	class HalleyStatics
@@ -11,11 +12,12 @@ namespace Halley
 	public:
 		HalleyStatics();
 		~HalleyStatics();
+		
 		void setupGlobals() const;
 		void resume(SystemAPI* system);
 		void suspend();
 
 	private:
-		std::unique_ptr<HalleyStaticsPimpl> pimpl;
+		std::shared_ptr<HalleyStaticsShared> sharedData;
 	};
 }

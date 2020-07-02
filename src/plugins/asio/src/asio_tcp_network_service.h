@@ -17,11 +17,12 @@ namespace Halley
 
 	private:
 		asio::io_service service;
+		asio::io_service::work work;
 		TCPEndpoint localEndpoint;
 		asio::ip::tcp::acceptor acceptor;
 
 		bool acceptingConnection = false;
-		Maybe<TCPSocket> acceptingSocket;
+		std::optional<TCPSocket> acceptingSocket;
 
 		std::vector<std::shared_ptr<AsioTCPConnection>> pendingConnections;
 		std::vector<std::shared_ptr<AsioTCPConnection>> activeConnections;

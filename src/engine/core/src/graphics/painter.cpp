@@ -1,4 +1,7 @@
 #include "halley/core/graphics/painter.h"
+
+#include <cassert>
+
 #include "halley/core/graphics/render_context.h"
 #include "halley/core/graphics/render_target/render_target.h"
 #include "halley/core/graphics/material/material.h"
@@ -13,6 +16,7 @@ using namespace Halley;
 Painter::Painter(Resources& resources)
 	: halleyGlobalMaterial(std::make_unique<Material>(resources.get<MaterialDefinition>("Halley/MaterialBase"), true))
 	, resources(resources)
+	, solidLineMaterial(std::make_unique<Material>(resources.get<MaterialDefinition>("Halley/SolidLine")))
 {
 }
 
@@ -70,7 +74,7 @@ Painter::PainterVertexData Painter::addDrawData(std::shared_ptr<Material>& mater
 		flushPending();
 	}
 
-	Expects(material);
+	Expects(material != nullptr);
 	Expects(numVertices > 0);
 	Expects(numIndices >= numVertices);
 
@@ -232,7 +236,7 @@ void Painter::drawLine(gsl::span<const Vector2f> points, float width, Colour4f c
 	const size_t nSegments = (loop ? nPoints : (nPoints - 1));
 	std::vector<LineVertex> vertices(nSegments * 4);
 
-	auto segmentNormal = [&] (size_t i) -> Maybe<Vector2f>
+	auto segmentNormal = [&] (size_t i) -> std::optional<Vector2f>
 	{
 		if (!loop && i >= nSegments) {
 			return {};
@@ -241,10 +245,11 @@ void Painter::drawLine(gsl::span<const Vector2f> points, float width, Colour4f c
 		}
 	};
 
-	auto makeNormal = [] (Vector2f a, Maybe<Vector2f> maybeB) -> Vector2f
+	auto makeNormal = [] (Vector2f a, std::optional<Vector2f> maybeB) -> Vector2f
 	{
-		if (maybeB) {
-			const auto b = maybeB.get();
+		// Enabling this makes it looks nicer, but also introduces a lot of edge cases with acute angles that are very hard to deal with, so only enable for angles <= 90 degrees
+		if (maybeB && maybeB.value().dot(a) >= -0.001f) {
+			const auto b = maybeB.value();
 			const auto c = (a + b).normalized();
 			const auto cosHalfAlpha = c.dot(a);
 			return c * (1.0f / cosHalfAlpha);
@@ -253,15 +258,14 @@ void Painter::drawLine(gsl::span<const Vector2f> points, float width, Colour4f c
 		}
 	};
 
-	Maybe<Vector2f> prevNormal = loop ? segmentNormal(nSegments - 1) : Maybe<Vector2f>();
-	Vector2f normal = segmentNormal(0).get();
-	Maybe<Vector2f> nextNormal;
+	std::optional<Vector2f> prevNormal = loop ? segmentNormal(nSegments - 1) : std::optional<Vector2f>();
+	Vector2f normal = segmentNormal(0).value();
 
 	for (size_t i = 0; i < nSegments; ++i) {
-		nextNormal = segmentNormal(i + 1);
+		std::optional<Vector2f> nextNormal = segmentNormal(i + 1);
 
-		Vector2f v0n = makeNormal(normal, prevNormal);
-		Vector2f v1n = makeNormal(normal, nextNormal);
+		const Vector2f v0n = makeNormal(normal, prevNormal);
+		const Vector2f v1n = makeNormal(normal, nextNormal);
 
 		for (size_t j = 0; j < 4; ++j) {
 			const size_t idx = i * 4 + j;
@@ -275,7 +279,7 @@ void Painter::drawLine(gsl::span<const Vector2f> points, float width, Colour4f c
 
 		prevNormal = normal;
 		if (nextNormal) {
-			normal = nextNormal.get();
+			normal = nextNormal.value();
 		}
 	}
 
@@ -284,7 +288,7 @@ void Painter::drawLine(gsl::span<const Vector2f> points, float width, Colour4f c
 
 static size_t getSegmentsForArc(float radius, float arcLen)
 {
-	return clamp(size_t(std::sqrt(radius * arcLen) * 5), size_t(4), size_t(256));
+	return clamp(size_t(arcLen / float(pi() * 2) * 50.0f), size_t(4), size_t(256));
 }
 
 void Painter::drawCircle(Vector2f centre, float radius, float width, Colour4f colour, std::shared_ptr<Material> material)
@@ -294,7 +298,7 @@ void Painter::drawCircle(Vector2f centre, float radius, float width, Colour4f co
 	for (size_t i = 0; i < n; ++i) {
 		points.push_back(centre + Vector2f(radius, 0).rotate(Angle1f::fromRadians(i * 2.0f * float(pi()) / n)));
 	}
-	drawLine(points, width, colour, true, material);
+	drawLine(points, width, colour, true, std::move(material));
 }
 
 void Painter::drawCircleArc(Vector2f centre, float radius, float width, Angle1f from, Angle1f to, Colour4f colour, std::shared_ptr<Material> material)
@@ -305,7 +309,7 @@ void Painter::drawCircleArc(Vector2f centre, float radius, float width, Angle1f 
 	for (size_t i = 0; i < n; ++i) {
 		points.push_back(centre + Vector2f(radius, 0).rotate(from + Angle1f::fromRadians(i * arcLen / (n - 1))));
 	}
-	drawLine(points, width, colour, false, material);
+	drawLine(points, width, colour, false, std::move(material));
 }
 
 void Painter::drawEllipse(Vector2f centre, Vector2f radius, float width, Colour4f colour, std::shared_ptr<Material> material)
@@ -315,7 +319,17 @@ void Painter::drawEllipse(Vector2f centre, Vector2f radius, float width, Colour4
 	for (size_t i = 0; i < n; ++i) {
 		points.push_back(centre + Vector2f(1.0f, 0).rotate(Angle1f::fromRadians(i * 2.0f * float(pi()) / n)) * radius);
 	}
-	drawLine(points, width, colour, true, material);
+	drawLine(points, width, colour, true, std::move(material));
+}
+
+void Painter::drawRect(Rect4f rect, float width, Colour4f colour, std::shared_ptr<Material> material)
+{
+	std::vector<Vector2f> points;
+	points.push_back(rect.getTopLeft());
+	points.push_back(rect.getTopRight());
+	points.push_back(rect.getBottomRight());
+	points.push_back(rect.getBottomLeft());
+	drawLine(points, width, colour, true, std::move(material));
 }
 
 void Painter::makeSpaceForPendingVertices(size_t numBytes)
@@ -343,6 +357,9 @@ void Painter::bind(RenderContext& context)
 
 	// Set render target
 	activeRenderTarget = &camera->getActiveRenderTarget();
+	if (!activeRenderTarget) {
+		throw Exception("No active render target", HalleyExceptions::Core);
+	}
 	activeRenderTarget->onBind(*this);
 
 	// Set viewport
@@ -386,7 +403,7 @@ void Painter::setClip(Rect4i rect)
 
 void Painter::setClip()
 {
-	pendingClip = Maybe<Rect4i>();
+	pendingClip = std::optional<Rect4i>();
 }
 
 Rect4i Painter::getRectangleForActiveRenderTarget(Rect4i r)
@@ -403,9 +420,6 @@ Rect4i Painter::getRectangleForActiveRenderTarget(Rect4i r)
 
 std::shared_ptr<Material> Painter::getSolidLineMaterial()
 {
-	if (!solidLineMaterial) {
-		solidLineMaterial = std::make_unique<Material>(resources.get<MaterialDefinition>("Halley/SolidLine"));
-	}
 	return solidLineMaterial;
 }
 
@@ -554,15 +568,18 @@ void Painter::updateProjection()
 
 void Painter::updateClip()
 {
-	if (curClip != pendingClip) {
-		flushPending();
+	Rect4i finalRect = viewPort;
+	if (pendingClip) {
+		finalRect = (pendingClip.value() + viewPort.getTopLeft()).intersection(viewPort);
+	}
+	const Rect4i targetClip = getRectangleForActiveRenderTarget(finalRect);
+	const bool enableClip = finalRect != activeRenderTarget->getViewPort();
+	const std::optional<Rect4i> dstClip = enableClip ? targetClip : std::optional<Rect4i>();
 
-		curClip = pendingClip;
-		if (curClip) {
-			Rect4i finalRect = (curClip.get() + viewPort.getTopLeft()).intersection(viewPort);
-			setClip(getRectangleForActiveRenderTarget(finalRect), finalRect != activeRenderTarget->getViewPort());
-		} else {
-			setClip(getRectangleForActiveRenderTarget(viewPort), viewPort != activeRenderTarget->getViewPort());
-		}
+	if (curClip != dstClip) {
+		curClip = dstClip;
+
+		flushPending();
+		setClip(targetClip, enableClip);
 	}
 }

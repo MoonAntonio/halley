@@ -28,11 +28,11 @@ void Sprite::draw(Painter& painter) const
 
 void Sprite::drawNormal(Painter& painter) const
 {
-	Expects(material);
+	Expects(material != nullptr);
 	Expects(material->getDefinition().getVertexStride() == sizeof(SpriteVertexAttrib));
 	
 	if (clip) {
-		painter.setRelativeClip(clip.get() + (absoluteClip ? Vector2f() : vertexAttrib.pos));
+		painter.setRelativeClip(clip.value() + (absoluteClip ? Vector2f() : vertexAttrib.pos));
 	}
 	painter.drawSprites(material, 1, &vertexAttrib);
 	if (clip) {
@@ -47,7 +47,7 @@ void Sprite::drawSliced(Painter& painter) const
 
 void Sprite::drawSliced(Painter& painter, Vector4s slicesPixel) const
 {
-	Expects(material);
+	Expects(material != nullptr);
 	Expects(material->getDefinition().getVertexStride() == sizeof(SpriteVertexAttrib));
 	
 	Vector4f slices(slicesPixel);
@@ -57,7 +57,7 @@ void Sprite::drawSliced(Painter& painter, Vector4s slicesPixel) const
 	slices.w /= size.y;
 
 	if (clip) {
-		painter.setRelativeClip(clip.get() + vertexAttrib.pos);
+		painter.setRelativeClip(clip.value() + vertexAttrib.pos);
 	}
 	painter.drawSlicedSprite(material, vertexAttrib.scale, slices, &vertexAttrib);
 	if (clip) {
@@ -138,37 +138,9 @@ Vector2f Sprite::getScaledSize() const
 	return vertexAttrib.scale * vertexAttrib.size;
 }
 
-Vector2f Sprite::getPosition() const
-{
-	return vertexAttrib.pos;
-}
-
-Colour4f Sprite::getColour() const
-{
-	return vertexAttrib.colour;
-}
-
-Sprite& Sprite::setPos(Vector2f v)
-{
-	vertexAttrib.pos = v;
-	return *this;
-}
-
-Sprite& Sprite::setPosition(Vector2f v)
-{
-	vertexAttrib.pos = v;
-	return *this;
-}
-
 Sprite& Sprite::setRotation(Angle1f v)
 {
 	vertexAttrib.rotation = v.getRadians();
-	return *this;
-}
-
-Sprite& Sprite::setColour(Colour4f v)
-{
-	vertexAttrib.colour = v;
 	return *this;
 }
 
@@ -257,7 +229,7 @@ Sprite& Sprite::setMaterial(std::shared_ptr<Material> m)
 {
 	bool hadMaterial = static_cast<bool>(material);
 
-	Expects(m);
+	Expects(m != nullptr);
 	material = m;
 
 	if (!hadMaterial && !material->getTextures().empty()) {
@@ -276,8 +248,8 @@ Sprite& Sprite::setImageData(const Texture& image)
 
 Sprite& Sprite::setImage(std::shared_ptr<const Texture> image, std::shared_ptr<const MaterialDefinition> materialDefinition)
 {
-	Expects(image);
-	Expects(materialDefinition);
+	Expects(image != nullptr);
+	Expects(materialDefinition != nullptr);
 
 	auto mat = std::make_shared<Material>(materialDefinition);
 	mat->set("tex0", image);
@@ -301,9 +273,16 @@ Sprite& Sprite::setImage(Resources& resources, String imageName, String material
 		materialName = "Halley/Sprite";
 	}
 	const auto sprite = resources.get<SpriteResource>(imageName);
-	const auto spriteSheet = sprite->getSpriteSheet();
-	setImage(spriteSheet->getTexture(), resources.get<MaterialDefinition>(materialName));
-	setSprite(sprite->getSprite());
+	const auto material = resources.get<MaterialDefinition>(materialName);
+	setImage(*sprite, material);
+	return *this;
+}
+
+Sprite& Sprite::setImage(const SpriteResource& sprite, std::shared_ptr<const MaterialDefinition> materialDefinition)
+{
+	const auto spriteSheet = sprite.getSpriteSheet();
+	setImage(spriteSheet->getTexture(), materialDefinition);
+	setSprite(sprite.getSprite());
 	return *this;
 }
 
@@ -361,15 +340,14 @@ Sprite& Sprite::setNotSliced()
 	return *this;
 }
 
-Sprite& Sprite::setVisible(bool v)
+bool Sprite::isSliced() const
 {
-	visible = v;
-	return *this;
+	return sliced;
 }
 
-bool Sprite::isVisible() const
+Vector4s Sprite::getSlices() const
 {
-	return visible;
+	return slices;
 }
 
 Sprite& Sprite::setClip(Rect4f c)
@@ -393,7 +371,7 @@ Sprite& Sprite::setClip()
 	return *this;
 }
 
-Maybe<Rect4f> Sprite::getClip() const
+std::optional<Rect4f> Sprite::getClip() const
 {
 	return clip;
 }
@@ -440,4 +418,21 @@ Sprite& Sprite::setOuterBorder(Vector4s border)
 Vector2f Sprite::getScale() const
 {
 	return vertexAttrib.scale;
+}
+
+Sprite ConfigNodeSerializer<Sprite>::deserialize(ConfigNodeSerializationContext& context, const ConfigNode& node)
+{
+	Sprite sprite;
+
+	if (node.hasKey("image")) {
+		sprite.setImage(*context.resources, node["image"].asString(), node["material"].asString(""));
+	}
+	if (node.hasKey("pivot")) {
+		sprite.setAbsolutePivot(node["pivot"].asVector2f());
+	}
+	sprite.setFlip(node["flip"].asBool(false));
+	sprite.setVisible(node["visible"].asBool(true));
+	sprite.setColour(Colour4f::fromString(node["colour"].asString("#FFFFFF")));
+
+	return sprite;
 }

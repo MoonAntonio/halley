@@ -1,35 +1,34 @@
 #pragma once
 #include "audio_buffer.h"
-#include <mutex>
 #include <atomic>
 #include <condition_variable>
 #include <map>
 #include <vector>
-#include "audio_emitter.h"
+#include "audio_voice.h"
 #include "halley/audio/resampler.h"
+#include "halley/data_structures/ring_buffer.h"
 #include "halley/maths/random.h"
-#include "halley/data_structures/flat_map.h"
 
 namespace Halley {
 	class AudioMixer;
 	class IAudioClip;
 	class Resources;
 
-    class AudioEngine
+    class AudioEngine: private IAudioOutput
     {
     public:
 	    AudioEngine();
 		~AudioEngine();
 
-	    void postEvent(size_t id, std::shared_ptr<const AudioEvent> event, const AudioPosition& position);
-	    void play(size_t id, std::shared_ptr<const IAudioClip> clip, AudioPosition position, float volume, bool loop);
+	    void postEvent(uint32_t id, const AudioEvent& event, const AudioPosition& position);
+	    void play(uint32_t id, std::shared_ptr<const IAudioClip> clip, AudioPosition position, float volume, bool loop);
 	    void setListener(AudioListenerData position);
 		void setOutputChannels(std::vector<AudioChannelData> channelData);
 
-		void addEmitter(size_t id, std::unique_ptr<AudioEmitter>&& src);
+		void addEmitter(uint32_t id, std::unique_ptr<AudioVoice>&& src);
 
-		const std::vector<AudioEmitter*>& getSources(size_t id);
-		std::vector<size_t> getPlayingSounds();
+		const std::vector<AudioVoice*>& getSources(uint32_t id);
+		std::vector<uint32_t> getPlayingSounds();
 
 		void run();
 		void start(AudioSpec spec, AudioOutputAPI& out);
@@ -47,21 +46,22 @@ namespace Halley {
 
     private:
 		AudioSpec spec;
-		AudioOutputAPI* out;
+		AudioOutputAPI* out = nullptr;
 		std::unique_ptr<AudioMixer> mixer;
 		std::unique_ptr<AudioBufferPool> pool;
 		std::unique_ptr<AudioResampler> outResampler;
+		std::vector<short> tmpShort;
+		std::vector<int> tmpInt;
+		RingBuffer<gsl::byte> audioOutputBuffer;
 
 		std::atomic<bool> running;
 		std::atomic<bool> needsBuffer;
-		std::mutex mutex;
-		std::condition_variable backBufferCondition;
 
-		std::vector<std::unique_ptr<AudioEmitter>> emitters;
+		std::vector<std::unique_ptr<AudioVoice>> emitters;
 		std::vector<AudioChannelData> channels;
 		
-		std::map<size_t, std::vector<AudioEmitter*>> idToSource;
-		std::vector<AudioEmitter*> dummyIdSource;
+		std::map<uint32_t, std::vector<AudioVoice*>> idToSource;
+		std::vector<AudioVoice*> dummyIdSource;
 
 		float masterGain = 1.0f;
 		std::vector<String> groupNames;
@@ -74,7 +74,13 @@ namespace Halley {
 		void mixEmitters(size_t numSamples, size_t channels, gsl::span<AudioBuffer*> buffers);
 	    void removeFinishedEmitters();
 		void clearBuffer(gsl::span<AudioSamplePack> dst);
+		void queueAudioFloat(gsl::span<const float> data);
+		void queueAudioBytes(gsl::span<const gsl::byte> data);
+		bool needsMoreAudio();
 
-    	float getGroupGain(int group) const;
+		size_t getAvailable() override;
+		size_t output(gsl::span<std::byte> dst, bool fill) override;
+
+    	float getGroupGain(uint8_t group) const;
     };
 }

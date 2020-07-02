@@ -3,6 +3,10 @@
 #include "dx11_buffer.h"
 #include <map>
 
+#include "dx11_rasterizer.h"
+#include "dx11_blend.h"
+#include "dx11_depth_stencil.h"
+
 namespace Halley
 {
 	class MaterialPass;
@@ -45,7 +49,7 @@ namespace Halley
 		std::unique_ptr<DX11DepthStencil> depthStencil;
 
 		size_t curBuffer = 0;
-		Maybe<Rect4i> clipping;
+		std::optional<Rect4i> clipping;
 
 		DX11Blend& getBlendMode(BlendType type);
 		void rotateBuffers();

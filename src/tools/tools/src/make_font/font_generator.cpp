@@ -12,10 +12,11 @@
 #include "halley/concurrency/concurrent.h"
 #include "halley/tools/file/filesystem.h"
 #include "halley/core/graphics/text/font.h"
+#include "halley/support/logger.h"
 
 using namespace Halley;
 
-static boost::optional<Vector<BinPackResult>> tryPacking(FontFace& font, float fontSize, Vector2i packSize, float scale, float borderSuperSampled, const std::vector<int>& characters)
+static std::optional<Vector<BinPackResult>> tryPacking(FontFace& font, float fontSize, Vector2i packSize, float scale, float borderSuperSampled, const std::vector<int>& characters)
 {
 	font.setSize(fontSize);
 
@@ -40,18 +41,18 @@ static boost::optional<Vector<BinPackResult>> tryPacking(FontFace& font, float f
 	}
 }
 
-static boost::optional<Vector<BinPackResult>> binarySearch(std::function<boost::optional<Vector<BinPackResult>>(int)> f, int minBound, int maxBound, int &best)
+static std::optional<Vector<BinPackResult>> binarySearch(std::function<std::optional<Vector<BinPackResult>>(int)> f, int minBound, int maxBound, int &best)
 {
 	int v0 = minBound;
 	int v1 = maxBound;
 	int lastGood = v0;
-	boost::optional<Vector<BinPackResult>> bestResult;
+	std::optional<Vector<BinPackResult>> bestResult;
 
 	while (v0 <= v1) {
 		int v = (v0 + v1) / 2;
-		boost::optional<Vector<BinPackResult>> result = f(v);
+		std::optional<Vector<BinPackResult>> result = f(v);
 
-		if (result.is_initialized()) {
+		if (result) {
 			// Midpoint is good, try increasing
 			lastGood = v;
 			bestResult = result;
@@ -88,15 +89,18 @@ FontGeneratorResult FontGenerator::generateFont(const Metadata& meta, gsl::span<
 
 	int fontSize = 0;
 	Vector2i imageSize;
-	boost::optional<Vector<BinPackResult>> result;
+	std::optional<Vector<BinPackResult>> result;
 
 	if (sizeInfo.fontSize) {
-		fontSize = int(sizeInfo.fontSize.get());
+		fontSize = int(sizeInfo.fontSize.value());
 
 		constexpr int minSize = 16;
 		constexpr int maxSize = 4096;
-		for (int i = 0; i < (2 * fastLog2Floor(uint32_t(maxSize / minSize))); ++i) {
+		for (int i = 0; ; ++i) {
 			auto curSize = Vector2i(minSize << ((i + 1) / 2), minSize << (i / 2));
+			if (curSize.x > maxSize || curSize.y > maxSize) {
+				break;
+			}
 			result = tryPacking(font, float(fontSize), curSize, scale, borderSuperSample, characters);
 			if (result) {
 				imageSize = curSize;
@@ -104,14 +108,14 @@ FontGeneratorResult FontGenerator::generateFont(const Metadata& meta, gsl::span<
 			}
 		}
 	} else if (sizeInfo.imageSize) {
-		imageSize = sizeInfo.imageSize.get();
+		imageSize = sizeInfo.imageSize.value();
 
 		if (verbose) {
 			std::cout << "Finding best pack size...\n";
 		}
 		constexpr int minFont = 0;
 		constexpr int maxFont = 1000;
-		result = binarySearch([&](int curFontSize) -> boost::optional<Vector<BinPackResult>>
+		result = binarySearch([&](int curFontSize) -> std::optional<Vector<BinPackResult>>
 		{
 			return tryPacking(font, float(curFontSize), imageSize, scale, borderSuperSample, characters);
 		}, minFont, maxFont, fontSize);
@@ -128,7 +132,7 @@ FontGeneratorResult FontGenerator::generateFont(const Metadata& meta, gsl::span<
 		return FontGeneratorResult();
 	}
 
-	auto dstImg = std::make_unique<Image>(Image::Format::RGBA, imageSize);
+	auto dstImg = std::make_unique<Image>(Image::Format::SingleChannel, imageSize);
 	dstImg->clear(0);
 
 	Vector<CharcodeEntry> codes;
@@ -137,7 +141,7 @@ FontGeneratorResult FontGenerator::generateFont(const Metadata& meta, gsl::span<
 	std::atomic<int> nDone(0);
 	std::atomic<bool> keepGoing(true);
 
-	auto& pack = result.get();
+	auto& pack = result.value();
 	if (verbose) {
 		std::cout << "Rendering " << pack.size() << " glyphs";
 	}
@@ -217,7 +221,7 @@ std::unique_ptr<Font> FontGenerator::generateFontMapBinary(const Metadata& meta,
 	const float ascender = float(lround(font.getAscender() * scale) + meta.getInt("ascenderAdjustment", 0));
 	const float height = float(lround(font.getHeight() * scale) + meta.getInt("lineSpacing", 0));
 	const float sizePt = float(lround(font.getSize() * scale));
-	const float smoothRadius = radius * scale;
+	const float smoothRadius = radius;
 	const int padding = lround(radius);
 
 	std::vector<String> fallback;
@@ -228,17 +232,17 @@ std::unique_ptr<Font> FontGenerator::generateFontMapBinary(const Metadata& meta,
 		}
 	}
 
-	std::unique_ptr<Font> result = std::make_unique<Font>(fontName, imageName, ascender, height, sizePt, replacementScale, smoothRadius, fallback);
+	std::unique_ptr<Font> result = std::make_unique<Font>(fontName, imageName, ascender, height, sizePt, replacementScale, imageSize, smoothRadius, fallback);
 
 	for (auto& c: entries) {
 		auto metrics = font.getMetrics(c.charcode, scale);
 
-		int32_t charcode = c.charcode;
-		Rect4f area = Rect4f(c.rect) / Vector2f(imageSize);
-		Vector2f size = Vector2f(c.rect.getSize());
-		Vector2f horizontalBearing = metrics.bearingHorizontal + Vector2f(float(-padding), float(padding));
-		Vector2f verticalBearing = metrics.bearingVertical + Vector2f(float(-padding), float(padding));
-		Vector2f advance = metrics.advance;
+		const int32_t charcode = c.charcode;
+		const Rect4f area = Rect4f(c.rect) / Vector2f(imageSize);
+		const Vector2f size = Vector2f(c.rect.getSize());
+		const Vector2f horizontalBearing = metrics.bearingHorizontal + Vector2f(float(-padding), float(padding));
+		const Vector2f verticalBearing = metrics.bearingVertical + Vector2f(float(-padding), float(padding));
+		const Vector2f advance = metrics.advance;
 
 		result->addGlyph(Font::Glyph(charcode, area, size, horizontalBearing, verticalBearing, advance));
 	}
@@ -251,7 +255,7 @@ std::unique_ptr<Metadata> FontGenerator::generateTextureMeta()
 	auto meta = std::make_unique<Metadata>();
 	meta->set("filtering", true);
 	meta->set("mipmap", false);
-	meta->set("format", "rgba");
+	meta->set("format", "red");
 	meta->set("compression", "raw_image");
 	return meta;
 }

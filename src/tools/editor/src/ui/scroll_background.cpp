@@ -7,16 +7,32 @@ ScrollBackground::ScrollBackground(String id, Resources& res, UISizer sizer)
 	bg = Sprite()
 		.setImage(res, "checkered.png")
 		.setColour(Colour4f::fromString("#111111"));
+
+	setHandle(UIEventType::MouseWheel, [this] (const UIEvent& event)
+	{
+		onMouseWheel(event);
+	});
+}
+
+float ScrollBackground::getZoomLevel() const
+{
+	return std::powf(2.0f, float(zoomExp));
+}
+
+void ScrollBackground::setZoomListener(ZoomListener listener)
+{
+	zoomListener = listener;
 }
 
 void ScrollBackground::update(Time t, bool moved)
 {
-	if (moved) {
+	if (moved || dirty) {
 		bg
 			.setPos(getPosition())
 			.setSize(getSize())
-			.setTexRect(Rect4f(Vector2f(), getSize() / Vector2f(16, 16)));
+			.setTexRect(Rect4f(Vector2f(), getSize() / Vector2f(16, 16) / getZoomLevel()));
 	}
+	dirty = false;
 }
 
 void ScrollBackground::draw(UIPainter& painter) const
@@ -34,10 +50,15 @@ bool ScrollBackground::isFocusLocked() const
 	return dragging;
 }
 
+UIScrollPane* ScrollBackground::getScrollPane() const
+{
+	return dynamic_cast<UIScrollPane*>(getParent());
+}
+
 void ScrollBackground::pressMouse(Vector2f mousePos, int button)
 {
 	if (button == 0) {
-		pane = dynamic_cast<UIScrollPane*>(getParent());
+		pane = getScrollPane();
 		if (pane) {
 			dragging = true;
 			mouseStartPos = mousePos;
@@ -58,6 +79,7 @@ void ScrollBackground::releaseMouse(Vector2f mousePos, int button)
 
 void ScrollBackground::onMouseOver(Vector2f mousePos)
 {
+	lastMousePos = mousePos;
 	if (dragging) {
 		setDragPos(mouseStartPos - mousePos + startScrollPos);
 	}
@@ -66,5 +88,36 @@ void ScrollBackground::onMouseOver(Vector2f mousePos)
 void ScrollBackground::setDragPos(Vector2f pos)
 {
 	pane->scrollTo(pos);
+}
+
+void ScrollBackground::onMouseWheel(const UIEvent& event)
+{
+	const float oldZoom = getZoomLevel();
+	zoomExp = clamp(zoomExp + signOf(event.getIntData()), -5, 5);
+	const float zoom = getZoomLevel();
+	dirty = true;
+
+	if (zoom != oldZoom) {
+		pane = getScrollPane();
+		if (!pane) {
+			return;
+		}
+
+		const Vector2f childPos = getChildren().at(0)->getPosition() - getPosition();
+
+		const Vector2f panelScrollPos = pane->getScrollPosition();
+
+		if (zoomListener) {
+			zoomListener(zoom);
+		}
+
+		pane->refresh();
+
+		const Vector2f relMousePos = lastMousePos - pane->getPosition();
+		const Vector2f oldMousePos = (relMousePos - childPos + panelScrollPos) / oldZoom;
+		const Vector2f newScrollPos = oldMousePos * zoom - relMousePos;
+
+		pane->scrollTo(newScrollPos);
+	}
 }
 

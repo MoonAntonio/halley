@@ -11,10 +11,10 @@ namespace Halley
 		virtual ~TextureRenderTarget() {}
 
 		void setTarget(int attachmentNumber, std::shared_ptr<Texture> tex);
-		std::shared_ptr<Texture> getTexture(int attachmentNumber) const;
+		const std::shared_ptr<Texture>& getTexture(int attachmentNumber) const;
 
 		void setDepthTexture(std::shared_ptr<Texture> tex);
-		std::shared_ptr<Texture> getDepthTexture() const;
+		const std::shared_ptr<Texture>& getDepthTexture() const;
 
 		Rect4i getViewPort() const override;
 		void setViewPort(Rect4i viewPort);
@@ -24,6 +24,6 @@ namespace Halley
 		Vector<std::shared_ptr<Texture>> attachments;
 		std::shared_ptr<Texture> depth;
 		bool dirty = false;
-		Maybe<Rect4i> viewPort;
+		std::optional<Rect4i> viewPort;
 	};
 }

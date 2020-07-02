@@ -2,6 +2,7 @@
 #include "graphics/sprite/animation_player.h"
 #include "graphics/sprite/sprite.h"
 #include <gsl/gsl_assert>
+#include "resources/resources.h"
 
 using namespace Halley;
 
@@ -10,13 +11,16 @@ AnimationPlayer::AnimationPlayer(std::shared_ptr<const Animation> animation, con
 	setAnimation(animation, sequence, direction);
 }
 
-AnimationPlayer& AnimationPlayer::playOnce(const String& sequence)
+AnimationPlayer& AnimationPlayer::playOnce(const String& sequence, const std::optional<String>& nextLoopingSequence)
 {
 	updateIfNeeded();
 
 	curSeq = nullptr;
 	setSequence(sequence);
 	seqLooping = false;
+
+	nextSequence = nextLoopingSequence;
+
 	return *this;
 }
 
@@ -46,6 +50,7 @@ AnimationPlayer& AnimationPlayer::setAnimation(std::shared_ptr<const Animation> 
 AnimationPlayer& AnimationPlayer::setSequence(const String& sequence)
 {
 	curSeqName = sequence;
+	nextSequence = {};
 	updateIfNeeded();
 
 	if (animation && (!curSeq || curSeq->getName() != sequence)) {
@@ -261,7 +266,12 @@ void AnimationPlayer::onSequenceStarted()
 
 void AnimationPlayer::onSequenceDone()
 {
-	playing = false;
+	if (nextSequence) {
+		setSequence(nextSequence.value());
+	}
+	else {
+		playing = false;
+	}
 }
 
 void AnimationPlayer::updateIfNeeded()
@@ -274,4 +284,15 @@ void AnimationPlayer::updateIfNeeded()
 		setSequence(curSeqName);
 		setDirection(curDirName);
 	}
+}
+
+AnimationPlayer ConfigNodeSerializer<AnimationPlayer>::deserialize(ConfigNodeSerializationContext& context, const ConfigNode& node)
+{
+	auto animName = node["animation"].asString("");
+	auto anim = animName.isEmpty() ? std::shared_ptr<Animation>() : context.resources->get<Animation>(animName);
+
+	auto player = AnimationPlayer(anim, node["sequence"].asString("default"), node["direction"].asString("default"));
+	player.setApplyPivot(node["applyPivot"].asBool(true));
+	player.setPlaybackSpeed(node["playbackSpeed"].asFloat(1.0f));	
+	return player;
 }

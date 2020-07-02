@@ -15,7 +15,7 @@ namespace Halley {
 	public:
 		using AutoCompleteHandle = std::function<std::vector<StringUTF32>(StringUTF32)>;
 		
-		explicit UITextInput(std::shared_ptr<InputKeyboard> keyboard, String id, UIStyle style, String text = "", LocalisedString ghostText = LocalisedString());
+		UITextInput(std::shared_ptr<InputKeyboard> keyboard, String id, UIStyle style, String text = "", LocalisedString ghostText = {}, std::shared_ptr<UIValidator> validator = {});
 
 		UITextInput(UITextInput&& other) = delete;
 		UITextInput(const UITextInput& other) = delete;
@@ -31,8 +31,8 @@ namespace Halley {
 		UITextInput& setGhostText(LocalisedString text);
 		LocalisedString getGhostText() const;
 
-		Maybe<int> getMaxLength() const;
-		void setMaxLength(Maybe<int> length);
+		std::optional<int> getMaxLength() const;
+		void setMaxLength(std::optional<int> length);
 
 		Range<int> getSelection() const;
 		void setSelection(int selection);
@@ -41,6 +41,11 @@ namespace Halley {
 		void onManualControlActivate() override;
 
 		void setAutoCompleteHandle(AutoCompleteHandle handle);
+
+		bool canReceiveFocus() const override;
+
+		void setReadOnly(bool enabled);
+		bool isReadOnly() const;
 
 	protected:
 		void draw(UIPainter& painter) const override;
@@ -56,6 +61,7 @@ namespace Halley {
 		void updateTextInput();
 		void updateCaret();
 
+		void onMaybeTextModified();
 		void onTextModified();
 		void validateText();
 		void onValidatorSet() override;
@@ -73,6 +79,7 @@ namespace Halley {
 
 		TextInputData text;
 		LocalisedString ghostText;
+		StringUTF32 lastText;
 		
 		StringUTF32 autoCompleteText;
 		AutoCompleteHandle autoCompleteHandle;

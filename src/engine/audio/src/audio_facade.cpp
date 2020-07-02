@@ -1,7 +1,7 @@
 #include "audio_facade.h"
 #include "audio_engine.h"
 #include "audio_handle_impl.h"
-#include "audio_emitter_behaviour.h"
+#include "audio_voice_behaviour.h"
 #include "halley/support/console.h"
 #include "halley/support/logger.h"
 #include "halley/core/resources/resources.h"
@@ -14,6 +14,9 @@ AudioFacade::AudioFacade(AudioOutputAPI& o, SystemAPI& system)
 	, system(system)
 	, running(false)
 	, started(false)
+	, commandQueue(256)
+	, exceptions(16)
+	, playingSoundsQueue(4)
 	, ownAudioThread(o.needsAudioThread())
 {
 }
@@ -50,13 +53,20 @@ Vector<std::unique_ptr<const AudioDevice>> AudioFacade::getAudioDevices()
 
 void AudioFacade::startPlayback(int deviceNumber)
 {
-	if (started) {
+	doStartPlayback(deviceNumber, true);
+}
+
+void AudioFacade::doStartPlayback(int deviceNumber, bool createEngine)
+{
+	if (createEngine && started) {
 		stopPlayback();
 	}
 
 	auto devices = getAudioDevices();
 	if (int(devices.size()) > deviceNumber) {
-		engine = std::make_unique<AudioEngine>();
+		if (createEngine) {
+			engine = std::make_unique<AudioEngine>();
+		}
 
 		AudioSpec format;
 		format.bufferSize = 512;
@@ -67,6 +77,7 @@ void AudioFacade::startPlayback(int deviceNumber)
 		try {
 			audioSpec = output.openAudioDevice(format, devices.at(deviceNumber).get(), [this]() { onNeedBuffer(); });
 			started = true;
+			lastDeviceNumber = deviceNumber;
 
 			std::cout << "Audio Playback started.\n";
 			std::cout << "\tDevice: " << devices.at(deviceNumber)->getName() << " [" << deviceNumber << "]\n";
@@ -115,7 +126,6 @@ void AudioFacade::pausePlayback()
 {
 	if (running) {
 		{
-			std::unique_lock<std::mutex> lock(audioMutex);
 			running = false;
 			engine->pause();
 		}
@@ -127,20 +137,30 @@ void AudioFacade::pausePlayback()
 	}
 }
 
+void AudioFacade::onSuspend()
+{
+	pausePlayback();
+}
+
+void AudioFacade::onResume()
+{
+	doStartPlayback(lastDeviceNumber, false);
+}
+
 AudioHandle AudioFacade::postEvent(const String& name, AudioPosition position)
 {
-	if (!resources->exists<AudioEvent>(name))
-	{
-		size_t id = uniqueId++;
+	if (!resources->exists<AudioEvent>(name)) {
+		Logger::logWarning("Unknown audio event: \"" + name + "\"");
+		uint32_t id = uniqueId++;
 		return std::make_shared<AudioHandleImpl>(*this, id);
 	}
 
 	auto event = resources->get<AudioEvent>(name);
 	event->loadDependencies(*resources);
 
-	size_t id = uniqueId++;
+	uint32_t id = uniqueId++;
 	enqueue([=] () {
-		engine->postEvent(id, event, position);
+		engine->postEvent(id, *event, position);
 	});
 	return std::make_shared<AudioHandleImpl>(*this, id);
 }
@@ -155,7 +175,7 @@ AudioHandle AudioFacade::playMusic(const String& eventName, int track, float fad
 
 	if (hasFade) {
 		handle->setGain(0.0f);
-		handle->setBehaviour(std::make_unique<AudioEmitterFadeBehaviour>(fadeInTime, 1.0f, false));
+		handle->setBehaviour(std::make_unique<AudioVoiceFadeBehaviour>(fadeInTime, 1.0f, false));
 	}
 
 	return handle;
@@ -163,7 +183,7 @@ AudioHandle AudioFacade::playMusic(const String& eventName, int track, float fad
 
 AudioHandle AudioFacade::play(std::shared_ptr<const IAudioClip> clip, AudioPosition position, float volume, bool loop)
 {
-	size_t id = uniqueId++;
+	uint32_t id = uniqueId++;
 	enqueue([=] () {
 		engine->play(id, clip, position, volume, loop);
 	});
@@ -222,7 +242,7 @@ void AudioFacade::setOutputChannels(std::vector<AudioChannelData> audioChannelDa
 void AudioFacade::stopMusic(AudioHandle& handle, float fadeOutTime)
 {
 	if (fadeOutTime > 0.001f) {
-		handle->setBehaviour(std::make_unique<AudioEmitterFadeBehaviour>(fadeOutTime, 0.0f, true));
+		handle->setBehaviour(std::make_unique<AudioVoiceFadeBehaviour>(fadeOutTime, 0.0f, true));
 	} else {
 		handle->stop();
 	}
@@ -244,8 +264,9 @@ void AudioFacade::setListener(AudioListenerData listener)
 
 void AudioFacade::onAudioException(std::exception& e)
 {
-	std::unique_lock<std::mutex> lock(exceptionMutex);
-	exceptions.emplace_back(e.what());
+	if (exceptions.canWrite(1)) {
+		exceptions.writeOne(e.what());
+	}
 }
 
 void AudioFacade::run()
@@ -259,16 +280,18 @@ void AudioFacade::stepAudio()
 {
 	try {
 		{
-			std::unique_lock<std::mutex> lock(audioMutex);
 			if (!running) {
 				return;
 			}
-			std::swap(inbox, inboxProcessing);
-			inbox.clear();
-			playingSoundsNext = engine->getPlayingSounds();
+			if (playingSoundsQueue.canWrite(1)) {
+				playingSoundsQueue.writeOne(engine->getPlayingSounds());
+			}
 		}
 
-		for (auto& action : inboxProcessing) {
+		const size_t nToRead = commandQueue.availableToRead();
+		inbox.resize(nToRead);
+		commandQueue.read(gsl::span<std::function<void()>>(inbox.data(), nToRead));
+		for (auto& action : inbox) {
 			action();
 		}
 
@@ -285,39 +308,29 @@ void AudioFacade::stepAudio()
 void AudioFacade::enqueue(std::function<void()> action)
 {
 	if (running) {
-		outbox.emplace_back(std::move(action));
+		if (commandQueue.canWrite(1)) {
+			commandQueue.writeOne(std::move(action));
+		} else {
+			Logger::logError("Out of space on audio command queue.");
+		}
 	}
 }
 
 void AudioFacade::pump()
 {
-	{
-		std::unique_lock<std::mutex> lock(exceptionMutex);
-		if (!exceptions.empty()) {
-			for (size_t i = 0; i + 1 < exceptions.size(); ++i) {
-				Logger::logError(exceptions[i]);
-			}
-			const auto e = exceptions.back();
-			exceptions.clear();
-			stopPlayback();
-			throw Exception(e, HalleyExceptions::AudioEngine);
+	if (!exceptions.empty()) {
+		String e;
+		while (!exceptions.empty()) {
+			e = exceptions.readOne();
+			Logger::logError(e);
 		}
+		stopPlayback();
+		throw Exception(e, HalleyExceptions::AudioEngine);
 	}
 
 	if (running) {
-		std::unique_lock<std::mutex> lock(audioMutex);
-		if (!outbox.empty()) {
-			size_t i = inbox.size();
-			inbox.resize(i + outbox.size());
-			for (auto& o: outbox) {
-				inbox[i++] = std::move(o);
-			}
-			outbox.clear();
+		while (playingSoundsQueue.canRead(1)) {
+			playingSounds = playingSoundsQueue.readOne();
 		}
-
-		playingSounds = playingSoundsNext;
-	} else {
-		inbox.clear();
-		outbox.clear();
 	}
 }

@@ -28,6 +28,7 @@ namespace Halley
 		Path getStem() const;
 		String getExtension() const;
 		String getString() const;
+		String getNativeString() const;
 		String toString() const;
 
 		size_t getNumberPaths() const;
@@ -57,7 +58,10 @@ namespace Halley
 		Path makeRelativeTo(const Path& path) const;
 		Path changeRelativeRoot(const Path& currentParent, const Path& newParent) const;
 
+		bool isDirectory() const;
+		bool isFile() const;
 		bool isAbsolute() const;
+		bool isEmpty() const;
 
 	private:
 		std::vector<String> pathParts;

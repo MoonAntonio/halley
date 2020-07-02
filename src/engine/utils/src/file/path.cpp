@@ -1,7 +1,7 @@
 #include "halley/file/path.h"
 #include <sstream>
 #include <fstream>
-#include "halley/core/halley_core.h"
+#include "halley/os/os.h"
 
 using namespace Halley;
 
@@ -88,6 +88,14 @@ void Path::normalise()
 	}
 
 	pathParts.resize(writePos);
+
+#ifdef _WIN32
+	if (!pathParts.empty()) {
+		if (pathParts[0].size() == 2 && pathParts[0][1] == ':') {
+			pathParts[0] = pathParts[0].asciiUpper();
+		}
+	}
+#endif
 }
 
 Path& Path::operator=(const std::string& other)
@@ -140,6 +148,19 @@ String Path::getString() const
 		s << p;
 	}
 	return s.str();
+}
+
+String Path::getNativeString() const
+{
+	auto str = getString();
+#ifdef _WIN32
+	for (auto& c: str.cppStr()) {
+		if (c == '/') {
+			c = '\\';
+		}
+	}
+#endif
+	return str;
 }
 
 String Path::toString() const
@@ -282,7 +303,10 @@ Path Path::makeRelativeTo(const Path& path) const
 		}
 	}
 
-	for (int i = 0; i < int(path.getNumberPaths()) - int(sharedRoot) - 1; ++i) {
+	const bool relToDir = path.isDirectory();
+	//const int foldersAbove = int(path.getNumberPaths()) - int(sharedRoot) - (isAbsolute() ? 0 : 1) - (relToDir ? 1 : 0);
+	const int foldersAbove = int(path.getNumberPaths()) - int(sharedRoot) - (relToDir ? 1 : 0);
+	for (int i = 0; i < foldersAbove; ++i) {
 		result.emplace_back("..");
 	}
 
@@ -299,6 +323,16 @@ Path Path::changeRelativeRoot(const Path& currentParent, const Path& newParent) 
 	return absolute.makeRelativeTo(newParent);
 }
 
+bool Path::isDirectory() const
+{
+	return !pathParts.empty() && pathParts.back() == ".";
+}
+
+bool Path::isFile() const
+{
+	return !pathParts.empty() && pathParts.back() != ".";
+}
+
 bool Path::isAbsolute() const
 {
 	if (pathParts.empty()) {
@@ -306,6 +340,11 @@ bool Path::isAbsolute() const
 	} else {
 		return pathParts[0].endsWith(":") || pathParts[0].isEmpty();
 	}
+}
+
+bool Path::isEmpty() const
+{
+	return pathParts.empty() || pathParts[0].isEmpty();
 }
 
 std::ostream& Halley::operator<<(std::ostream& os, const Path& p)

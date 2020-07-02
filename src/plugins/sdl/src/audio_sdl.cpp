@@ -1,19 +1,24 @@
 #include "audio_sdl.h"
 #include <SDL.h>
 #include <cstdint>
+#include <utility>
 #include "halley/text/string_converter.h"
 #include "halley/support/logger.h"
 
 using namespace Halley;
 
 AudioDeviceSDL::AudioDeviceSDL(String name)
-	: name(name)
+	: name(std::move(name))
 {
 }
 
 String AudioDeviceSDL::getName() const
 {
 	return name != "" ? name : "Default";
+}
+
+AudioSDL::AudioSDL()
+{
 }
 
 void AudioSDL::init()
@@ -23,14 +28,10 @@ void AudioSDL::init()
 	}
 }
 
-bool AudioSDL::needsAudioThread() const
-{
-	return false;
-}
-
 void AudioSDL::deInit()
 {
 	closeAudioDevice();
+	SDL_QuitSubSystem(SDL_INIT_AUDIO);
 }
 
 Vector<std::unique_ptr<const AudioDevice>> AudioSDL::getAudioDevices()
@@ -112,102 +113,33 @@ void AudioSDL::stopPlayback()
 	}
 }
 
-void AudioSDL::queueAudio(gsl::span<const float> data)
+void AudioSDL::onSuspend()
 {
-	Expects(device);
+	deInit();
+}
 
-	const size_t numSamples = data.size();
+void AudioSDL::onResume()
+{
+	init();
+}
 
-	// Float
-	if (outputFormat.format == AudioSampleFormat::Float) {
-		doQueueAudio(gsl::as_bytes(data));
-	}
-	
-	// Int16
-	else if (outputFormat.format == AudioSampleFormat::Int16) {
-		if (tmpShort.size() < numSamples) {
-			tmpShort.resize(numSamples);
-		}
-		for (ptrdiff_t i = 0; i < data.size(); ++i) {
-			tmpShort[i] = static_cast<short>(data[i] * 32768.0f);
-		}
+bool AudioSDL::needsAudioThread() const
+{
+	return true;
+}
 
-		doQueueAudio(gsl::as_bytes(gsl::span<short>(tmpShort)));
-	}
-	
-	// Int32
-	else if (outputFormat.format == AudioSampleFormat::Int32) {
-		if (tmpInt.size() < numSamples) {
-			tmpInt.resize(numSamples);
-		}
-		for (ptrdiff_t i = 0; i < data.size(); ++i) {
-			tmpInt[i] = static_cast<int>(data[i] * 2147483648.0f);
-		}
+void AudioSDL::onAudioAvailable()
+{
+}
 
-		doQueueAudio(gsl::as_bytes(gsl::span<int>(tmpInt)));
-	}
+void AudioSDL::onCallback(unsigned char* stream, int len)
+{
+	const auto dst = gsl::span<std::byte>(reinterpret_cast<std::byte*>(stream), len);
+	getAudioOutputInterface().output(dst, true);
 }
 
 bool AudioSDL::needsMoreAudio()
 {
-	/*
-	size_t sizePerSample = outputFormat.format == AudioSampleFormat::Int16 ? 2 : 4;
-	size_t queuedAudioSize = queuedSize / (outputFormat.numChannels * sizePerSample);
-	 */
-
-	// Doesn't use threaded audio
-	return false;
-}
-
-void AudioSDL::doQueueAudio(gsl::span<const gsl::byte> data) 
-{
-	std::vector<unsigned char> tmp(data.size_bytes());
-	memcpy(tmp.data(), data.data(), data.size_bytes());
-
-	std::unique_lock<std::mutex> lock(mutex);
-	queuedSize += data.size_bytes();
-	audioQueue.push_back(std::move(tmp));
-}
-
-void AudioSDL::onCallback(unsigned char* stream, int len) 
-{
-	size_t remaining = size_t(len);
-	size_t pos = 0;
-
-	while (remaining > 0) {
-		std::unique_lock<std::mutex> lock(mutex);
-		if (audioQueue.empty()) {
-			lock.unlock();
-			if (prepareAudioCallback) {
-				prepareAudioCallback();
-			}
-			
-			// Either no callback, or callback didn't add anything
-			if (audioQueue.empty()) {
-				break;
-			}
-		} else {
-			auto& front = audioQueue.front();
-			size_t toCopy = std::min(remaining, front.size() - readPos);
-
-			memcpy(stream + pos, front.data() + readPos, toCopy);
-
-			remaining -= toCopy;
-			queuedSize -= toCopy;
-			pos += toCopy;
-			readPos += toCopy;
-
-			if (readPos == front.size()) {
-				readPos = 0;
-				audioQueue.pop_front();
-			}
-		}
-	}
-
-	if (remaining > 0) {
-		// :(
-		Logger::logWarning("Insufficient audio data, padding with zeroes.");
-		memset(stream + pos, 0, remaining);
-	}
+	return getAudioOutputInterface().getAvailable() < getAudioBytesNeeded(outputFormat, 2);
 }
 

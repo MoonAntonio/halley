@@ -5,19 +5,24 @@
 #include "halley/text/string_converter.h"
 using namespace Halley;
 
-static void loadMetaTable(Metadata& meta, const YAML::Node& root)
+static void loadMetaTable(Metadata& meta, const YAML::Node& root, bool dirMeta)
 {
 	for (YAML::const_iterator it = root.begin(); it != root.end(); ++it) {
 		String key = it->first.as<std::string>();
 		String value = it->second.as<std::string>();
 		meta.set(key, value);
+		if (dirMeta) {
+			meta.set(":" + key, value);
+		}
 	}
 }
 
-void MetadataImporter::loadMetaData(Metadata& meta, const Path& path, bool isDirectoryMeta, String assetId)
+void MetadataImporter::loadMetaData(Metadata& meta, const Path& path, bool isDirectoryMeta, const Path& inputFilePath)
 {
-	auto data = ResourceDataStatic::loadFromFileSystem(path);
-	auto root = YAML::Load(data->getString());
+	const auto data = ResourceDataStatic::loadFromFileSystem(path);
+	auto root = YAML::Load(data ? data->getString() : "");
+
+	const String inputFilePathStr = inputFilePath.toString();
 
 	if (isDirectoryMeta) {
 		for (const auto& rootList: root) {
@@ -26,31 +31,31 @@ void MetadataImporter::loadMetaData(Metadata& meta, const Path& path, bool isDir
 				matches = false;
 				for (auto& pattern: rootList["match"]) {
 					auto p = pattern.as<std::string>();
-					if (assetId.contains(p)) {
+					if (inputFilePathStr.contains(p)) {
 						matches = true;
 						break;
 					}
 				}
 			}
 			if (matches && rootList["data"]) {
-				loadMetaTable(meta, rootList["data"]);
+				loadMetaTable(meta, rootList["data"], true);
 				return;
 			}
 		}
 	} else {
-		loadMetaTable(meta, root);
+		loadMetaTable(meta, root, false);
 	}
 }
 
-Metadata MetadataImporter::getMetaData(Path inputFilePath, Maybe<Path> dirMetaPath, Maybe<Path> privateMetaPath)
+Metadata MetadataImporter::getMetaData(const Path& inputFilePath, std::optional<Path> dirMetaPath, std::optional<Path> privateMetaPath)
 {
 	Metadata meta;
 	try {
 		if (dirMetaPath) {
-			loadMetaData(meta, dirMetaPath.get(), true, inputFilePath.toString());
+			loadMetaData(meta, dirMetaPath.value(), true, inputFilePath);
 		}
 		if (privateMetaPath) {
-			loadMetaData(meta, privateMetaPath.get(), false, inputFilePath.toString());
+			loadMetaData(meta, privateMetaPath.value(), false, inputFilePath);
 		}
 	} catch (std::exception& e) {
 		throw Exception("Error parsing metafile for " + inputFilePath + ": " + e.what(), HalleyExceptions::Tools);

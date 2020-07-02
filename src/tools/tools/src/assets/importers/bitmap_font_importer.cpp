@@ -8,7 +8,7 @@
 
 using namespace Halley;
 
-String BitmapFontImporter::getAssetId(const Path& file, const Maybe<Metadata>& metadata) const
+String BitmapFontImporter::getAssetId(const Path& file, const std::optional<Metadata>& metadata) const
 {
 	return file.getStem().getString();
 }
@@ -66,7 +66,7 @@ Font BitmapFontImporter::parseBitmapFontXML(Vector2i imageSize, const Bytes& dat
 			fontElem->GetAttribute("height", &fontHeight);
 			fontElem->GetAttribute("size", &fontSize);
 
-			Font font(family, family, 0, float(fontHeight), float(fontSize), 1.0f);
+			Font font(family, family, 0, float(fontHeight), float(fontSize), 1.0f, imageSize);
 
 			ticpp::Iterator<ticpp::Element> child("Char");
 			for (child = child.begin(fontIter); child != child.end(); ++child) {

@@ -4,7 +4,8 @@
 using namespace Halley;
 
 AsioTCPNetworkService::AsioTCPNetworkService(int port, IPVersion version)
-	: localEndpoint(version == IPVersion::IPv4 ? asio::ip::tcp::v4() : asio::ip::tcp::v6(), static_cast<unsigned short>(port))
+	: work(service)
+	, localEndpoint(version == IPVersion::IPv4 ? asio::ip::tcp::v4() : asio::ip::tcp::v6(), static_cast<unsigned short>(port))
 	, acceptor(service, localEndpoint)
 {
 	Expects(port == 0 || port > 1024);
@@ -33,7 +34,7 @@ void AsioTCPNetworkService::setAcceptingConnections(bool accepting)
 
 		if (accepting) {
 			acceptingSocket = TCPSocket(service);
-			acceptor.async_accept(acceptingSocket.get(), [this] (const boost::system::error_code& ec) {
+			acceptor.async_accept(acceptingSocket.value(), [this] (const boost::system::error_code& ec) {
 				if (ec) {
 					Logger::logError("Error accepting connection: " + ec.message());
 				} else {
@@ -67,7 +68,7 @@ std::shared_ptr<IConnection> AsioTCPNetworkService::connect(String address, int 
 void AsioTCPNetworkService::onConnectionAccepted()
 {
 	// Move socket into a new connection
-	pendingConnections.push_back(std::make_shared<AsioTCPConnection>(service, std::move(acceptingSocket.get())));
+	pendingConnections.push_back(std::make_shared<AsioTCPConnection>(service, std::move(acceptingSocket.value())));
 	activeConnections.push_back(pendingConnections.back());
 	acceptingSocket = {};
 

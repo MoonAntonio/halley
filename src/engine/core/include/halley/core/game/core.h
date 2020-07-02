@@ -6,7 +6,7 @@
 #include <halley/time/stopwatch.h>
 #include <halley/support/redirect_stream.h>
 #include <halley/core/stage/stage.h>
-#include <halley/runner/main_loop.h>
+#include <halley/core/game/main_loop.h>
 #include <halley/plugin/plugin.h>
 #include <halley/core/api/halley_api_internal.h>
 #include "halley_statics.h"
@@ -36,7 +36,6 @@ namespace Halley
 		void initStage(Stage& stage) override;
 		Stage& getCurrentStage() override;
 		void quit(int exitCode = 0) override;
-		Resources& getResources() override;
 		const Environment& getEnvironment() override;
 		int64_t getTime(CoreAPITimer timer, TimeLine tl, StopwatchAveraging::Mode mode) const override;
 
@@ -45,7 +44,9 @@ namespace Halley
 		bool isRunning() const override	{ return running; }
 		bool transitionStage() override;
 		const HalleyAPI& getAPI() const override { return *api; }
-		const HalleyStatics& getStatics() override;
+		HalleyStatics& getStatics() override;
+
+		Resources& getResources();
 
 		void onSuspended() override;
 		void onReloaded() override;
@@ -95,6 +96,7 @@ namespace Halley
 		std::unique_ptr<Stage> nextStage;
 		bool pendingStageTransition = false;
 
+		bool initialized = false;
 		bool running = true;
 		bool hasError = false;
 		bool hasConsole = false;

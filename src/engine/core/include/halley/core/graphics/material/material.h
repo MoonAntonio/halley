@@ -3,6 +3,7 @@
 #include <memory>
 #include "halley/text/halleystring.h"
 #include "halley/core/graphics/texture.h"
+#include "halley/core/graphics/material/material_parameter.h"
 #include <gsl/gsl>
 
 namespace Halley
@@ -83,6 +84,7 @@ namespace Halley
 		const std::shared_ptr<const Texture>& getTexture(int textureUnit) const;
 		const Vector<MaterialTextureParameter>& getTextureUniforms() const;
 		const std::vector<std::shared_ptr<const Texture>>& getTextures() const;
+		size_t getNumTextureUnits() const;
 
 		const Vector<MaterialParameter>& getUniforms() const;
 		const Vector<MaterialDataBlock>& getDataBlocks() const;
@@ -114,7 +116,7 @@ namespace Halley
 
 		std::vector<char> passEnabled;
 
-		mutable uint64_t hashValue;
+		mutable uint64_t hashValue = 0;
 		mutable bool needToUpdateHash = true;
 		bool needToUploadData = true;
 
@@ -123,5 +125,7 @@ namespace Halley
 
 		void setUniform(int blockNumber, size_t offset, ShaderParameterType type, const void* data);
 		uint64_t computeHash() const;
+
+		const std::shared_ptr<const Texture>& getFallbackTexture() const;
 	};
 }

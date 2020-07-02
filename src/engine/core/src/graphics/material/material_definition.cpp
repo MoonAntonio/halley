@@ -69,6 +69,8 @@ void MaterialAttribute::serialize(Serializer& s) const
 {
 	s << name;
 	s << type;
+	s << semantic;
+	s << semanticIndex;
 	s << location;
 	s << offset;
 }
@@ -77,6 +79,8 @@ void MaterialAttribute::deserialize(Deserializer& s)
 {
 	s >> name;
 	s >> type;
+	s >> semantic;
+	s >> semanticIndex;
 	s >> location;
 	s >> offset;
 }
@@ -100,6 +104,29 @@ size_t MaterialAttribute::getAttributeSize(ShaderParameterType type)
 	}
 }
 
+MaterialTexture::MaterialTexture()
+{}
+
+MaterialTexture::MaterialTexture(String name, String defaultTexture, ShaderParameterType samplerType)
+	: name(std::move(name))
+	, defaultTextureName(std::move(defaultTexture))
+	, samplerType(samplerType)
+{}
+
+void MaterialTexture::serialize(Serializer& s) const
+{
+	s << name;
+	s << defaultTextureName;
+	s << samplerType;
+}
+
+void MaterialTexture::deserialize(Deserializer& s)
+{
+	s >> name;
+	s >> defaultTextureName;
+	s >> samplerType;
+}
+
 MaterialDefinition::MaterialDefinition() {}
 
 MaterialDefinition::MaterialDefinition(ResourceLoader& loader)
@@ -113,6 +140,15 @@ MaterialDefinition::MaterialDefinition(ResourceLoader& loader)
 	for (auto& p: passes) {
 		p.createShader(loader, name + "/pass" + toString(i++), attributes);
 	}
+	columnMajor = api->isColumnMajor();
+
+	// Load textures
+	fallbackTexture = loader.getResources().get<Texture>("whitebox.png");
+	for (auto& tex: textures) {
+		if (!tex.defaultTextureName.isEmpty()) {
+			tex.defaultTexture = loader.getResources().get<Texture>(tex.defaultTextureName);
+		}
+	}
 }
 
 void MaterialDefinition::reload(Resource&& resource)
@@ -125,6 +161,7 @@ void MaterialDefinition::load(const ConfigNode& root)
 {
 	// Load name
 	name = root["name"].asString("Unknown");
+	defaultMask = root["defaultMask"].asInt(1);
 
 	// Load attributes & uniforms
 	if (root.hasKey("attributes")) {
@@ -177,6 +214,16 @@ size_t MaterialDefinition::getVertexPosOffset() const
 	return size_t(vertexPosOffset);
 }
 
+const std::shared_ptr<const Texture>& MaterialDefinition::getFallbackTexture() const
+{
+	return fallbackTexture;
+}
+
+int MaterialDefinition::getDefaultMask() const
+{
+	return defaultMask;
+}
+
 void MaterialDefinition::addPass(const MaterialPass& materialPass)
 {
 	passes.push_back(materialPass);
@@ -196,6 +243,7 @@ void MaterialDefinition::serialize(Serializer& s) const
 	s << attributes;
 	s << vertexSize;
 	s << vertexPosOffset;
+	s << defaultMask;
 }
 
 void MaterialDefinition::deserialize(Deserializer& s)
@@ -207,6 +255,12 @@ void MaterialDefinition::deserialize(Deserializer& s)
 	s >> attributes;
 	s >> vertexSize;
 	s >> vertexPosOffset;
+	s >> defaultMask;
+}
+
+bool MaterialDefinition::isColumnMajor() const
+{
+	return columnMajor;
 }
 
 void MaterialDefinition::loadUniforms(const ConfigNode& node)
@@ -233,15 +287,26 @@ void MaterialDefinition::loadUniforms(const ConfigNode& node)
 void MaterialDefinition::loadTextures(const ConfigNode& node)
 {
 	for (auto& attribEntry: node.asSequence()) {
-		for (auto& it: attribEntry.asMap()) {
-			String name = it.first;
-			ShaderParameterType type = parseParameterType(it.second.asString());
-			if (type != ShaderParameterType::Texture2D) {
-				throw Exception("Texture \"" + name + "\" must be sampler2D", HalleyExceptions::Resources);
+		MaterialTexture tex;
+		
+		if (attribEntry.hasKey("name")) {
+			// New format
+			tex.name = attribEntry["name"].asString();
+			tex.samplerType = parseParameterType(attribEntry["sampler"].asString("sampler2D"));
+			tex.defaultTextureName = attribEntry["defaultTexture"].asString("");
+		} else {
+			// Old format
+			for (auto& it : attribEntry.asMap()) {
+				tex.name = it.first;
+				tex.samplerType = parseParameterType(it.second.asString());
 			}
-
-			textures.push_back(name);
 		}
+
+		if (tex.samplerType != ShaderParameterType::Texture2D) {
+			throw Exception("Texture \"" + tex.name + "\" must be sampler2D", HalleyExceptions::Resources);
+		}
+
+		textures.push_back(tex);
 	}
 }
 
@@ -250,24 +315,29 @@ void MaterialDefinition::loadAttributes(const ConfigNode& node)
 	int location = int(attributes.size());
 	int offset = vertexSize;
 
-	for (auto& attribEntry: node.asSequence()) {
-		for (auto& it: attribEntry.asMap()) {
-			String name = it.first;
-			ShaderParameterType type = parseParameterType(it.second.asString());
+	for (const auto& attribEntry: node.asSequence()) {
+		const ShaderParameterType type = parseParameterType(attribEntry["type"].asString());
+		String semantic = attribEntry["semantic"].asString();
+		int semanticIndex = 0;
+		if (semantic.right(1).isInteger()) {
+			semanticIndex = semantic.right(1).toInteger();
+			semantic = semantic.left(semantic.size() - 1);
+		}
 
-			attributes.push_back(MaterialAttribute());
-			auto& a = attributes.back();
-			a.name = name;
-			a.type = type;
-			a.location = location++;
-			a.offset = offset;
+		attributes.push_back(MaterialAttribute());
+		auto& a = attributes.back();
+		a.name = attribEntry["name"].asString("");
+		a.type = type;
+		a.semantic = semantic;
+		a.semanticIndex = semanticIndex;
+		a.location = location++;
+		a.offset = offset;
 
-			int size = int(MaterialAttribute::getAttributeSize(type));
-			offset += size;
+		const int size = int(MaterialAttribute::getAttributeSize(type));
+		offset += size;
 
-			if (a.name == "a_vertPos") {
-				vertexPosOffset = a.offset;
-			}
+		if (attribEntry["special"].asString("") == "vertPos") {
+			vertexPosOffset = a.offset;
 		}
 	}
 
@@ -278,13 +348,13 @@ ShaderParameterType MaterialDefinition::parseParameterType(String rawType) const
 {
 	if (rawType == "float") {
 		return ShaderParameterType::Float;
-	} else if (rawType == "vec2") {
+	} else if (rawType == "float2" || rawType == "vec2") {
 		return ShaderParameterType::Float2;
-	} else if (rawType == "vec3") {
+	} else if (rawType == "float3" || rawType == "vec3") {
 		return ShaderParameterType::Float3;
-	} else if (rawType == "vec4") {
+	} else if (rawType == "float4" || rawType == "vec4") {
 		return ShaderParameterType::Float4;
-	} else if (rawType == "mat4") {
+	} else if (rawType == "float4x4" || rawType == "mat4") {
 		return ShaderParameterType::Matrix4;
 	} else if (rawType == "sampler2D") {
 		return ShaderParameterType::Texture2D;
@@ -447,21 +517,7 @@ MaterialPass::MaterialPass()
 MaterialPass::MaterialPass(const String& shaderAssetId, const ConfigNode& node)
 	: shaderAssetId(shaderAssetId)
 {
-	String blendName = node["blend"].asString("Opaque");
-	if (blendName == "Opaque") {
-		blend = BlendType::Opaque;
-	} else if (blendName == "Alpha") {
-		blend = BlendType::Alpha;
-	} else if (blendName == "AlphaPremultiplied") {
-		blend = BlendType::AlphaPremultiplied;
-	} else if (blendName == "Add") {
-		blend = BlendType::Add;
-	} else if (blendName == "Multiply") {
-		blend = BlendType::Multiply;
-	} else {
-		throw Exception("Unknown blend type: " + blendName, HalleyExceptions::Resources);
-	}
-
+	blend = fromString<BlendType>(node["blend"].asString("Opaque"));
 	cull = fromString<CullingMode>(node["cull"].asString("None"));
 
 	if (node.hasKey("depth")) {

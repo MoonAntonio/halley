@@ -10,6 +10,7 @@
 #include "ui/taskbar.h"
 #include "ui/toolbar.h"
 #include "assets/assets_editor_window.h"
+#include "scene/scene_editor_window.h"
 
 using namespace Halley;
 
@@ -61,8 +62,11 @@ void EditorRootStage::onVariableUpdate(Time time)
 
 void EditorRootStage::onRender(RenderContext& context) const
 {
+	ui->render(context);
+	
 	context.bind([&](Painter& painter)
 	{
+		painter.clear(Colour4f()); // Needed for depth/stencil
 		auto view = Rect4f(painter.getViewPort());
 
 		// Background
@@ -72,7 +76,7 @@ void EditorRootStage::onRender(RenderContext& context) const
 
 		// UI
 		SpritePainter spritePainter;
-		spritePainter.start(100);
+		spritePainter.start();
 		ui->draw(spritePainter, 1, 0);
 		spritePainter.draw(1, painter);
 	});
@@ -161,7 +165,7 @@ void EditorRootStage::createProjectUI()
 {
 	clearUI();
 
-	pagedPane = std::make_shared<UIPagedPane>("pages", 5);
+	pagedPane = std::make_shared<UIPagedPane>("pages", 6);
 	const auto toolbar = std::make_shared<Toolbar>(*uiFactory, project->getProperties());
 	const auto taskbar = std::make_shared<TaskBar>(*uiFactory, *tasks);
 
@@ -169,26 +173,30 @@ void EditorRootStage::createProjectUI()
 	uiMid->add(pagedPane, 1);
 	uiBottom->add(taskbar, 1);
 
-	pagedPane->getPage(0)->add(std::make_shared<AssetsEditorWindow>(*uiFactory, *project, getAPI()), 1, Vector4f(8, 8, 8, 8));
-	pagedPane->getPage(4)->add(std::make_shared<ConsoleWindow>(*uiFactory), 1, Vector4f(8, 8, 8, 8));
+	pagedPane->getPage(int(EditorTabs::Assets))->add(std::make_shared<AssetsEditorWindow>(*uiFactory, *project, *this), 1, Vector4f(8, 8, 8, 8));
+	pagedPane->getPage(int(EditorTabs::Scene))->add(std::make_shared<SceneEditorWindow>(*uiFactory, *project, getAPI()), 1, Vector4f(8, 8, 8, 8));
+	pagedPane->getPage(int(EditorTabs::Settings))->add(std::make_shared<ConsoleWindow>(*uiFactory), 1, Vector4f(8, 8, 8, 8));
 
-	toolbar->setHandle(UIEventType::ListSelectionChanged, [=] (const UIEvent& event)
+	toolbar->setHandle(UIEventType::ListSelectionChanged, "toolbarList", [=] (const UIEvent& event)
 	{
 		String toolName;
-		switch (event.getIntData()) {
-		case 0:
+		switch (EditorTabs(event.getIntData())) {
+		case EditorTabs::Assets:
 			toolName = "Assets";
 			break;
-		case 1:
+		case EditorTabs::Scene:
+			toolName = "Scene";
+			break;
+		case EditorTabs::ECS:
 			toolName = "ECS";
 			break;
-		case 2:
+		case EditorTabs::Remotes:
 			toolName = "Remotes";
 			break;
-		case 3:
+		case EditorTabs::Properties:
 			toolName = "Properties";
 			break;
-		case 4:
+		case EditorTabs::Settings:
 			toolName = "Settings";
 			break;
 		}
@@ -206,6 +214,10 @@ void EditorRootStage::updateUI(Time time)
 	const auto kb = getInputAPI().getKeyboard();
 	const auto size = getVideoAPI().getWindow().getDefinition().getSize();
 
+	if (kb->isButtonPressed(Keys::Tab)) {
+		ui->focusNext(kb->isButtonDown(Keys::LShift) || kb->isButtonDown(Keys::RShift));
+	}
+	
 	uiMainPanel->setMinSize(Vector2f(size));
 	ui->setRect(Rect4f(Vector2f(), Vector2f(size)));
 	ui->update(time, UIInputType::Mouse, getInputAPI().getMouse(), kb);
@@ -224,4 +236,17 @@ void EditorRootStage::unloadProject()
 {
 	tasks.reset();
 	project.reset();
+}
+
+void EditorRootStage::openPrefab(const String& name, AssetType assetType)
+{
+	auto sceneEditor = ui->getWidgetAs<SceneEditorWindow>("scene_editor");
+	if (assetType == AssetType::Scene) {
+		sceneEditor->loadScene(name);
+	} else if (assetType == AssetType::Prefab) {
+		sceneEditor->loadPrefab(name);
+	}
+	auto toolbar = ui->getWidgetAs<UIList>("toolbarList");
+	toolbar->setSelectedOption(int(EditorTabs::Scene));
+	//pagedPane->setPage(int(EditorTabs::Scene));
 }

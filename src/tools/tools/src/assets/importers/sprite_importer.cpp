@@ -36,9 +36,9 @@ void SpriteImporter::import(const ImportingAsset& asset, IAssetCollector& collec
 	String spriteSheetName = Path(asset.assetId).replaceExtension("").string();
 	std::vector<ImageData> totalFrames;
 
-	Maybe<Metadata> startMeta;
+	std::optional<Metadata> startMeta;
 
-	Maybe<String> palette;
+	std::optional<String> palette;
 
 	for (auto& inputFile: asset.inputFiles) {
 		auto fileInputId = Path(inputFile.name).dropFront(1);
@@ -62,8 +62,8 @@ void SpriteImporter::import(const ImportingAsset& asset, IAssetCollector& collec
 		// Palette
 		auto thisPalette = meta.getString("palette", "");
 		if (palette) {
-			if (thisPalette != palette.get()) {
-				throw Exception("Incompatible palettes in atlas \"" + atlasName + "\". Previously using \"" + palette.get() + "\", now trying to use \"" + thisPalette + "\"", HalleyExceptions::Tools);
+			if (thisPalette != palette.value()) {
+				throw Exception("Incompatible palettes in atlas \"" + atlasName + "\". Previously using \"" + palette.value() + "\", now trying to use \"" + thisPalette + "\"", HalleyExceptions::Tools);
 			}
 		} else {
 			palette = thisPalette;
@@ -103,7 +103,7 @@ void SpriteImporter::import(const ImportingAsset& asset, IAssetCollector& collec
 
 		// Write animation
 		Animation animation = generateAnimation(spriteName, spriteSheetName, meta.getString("material", "Halley/Sprite"), frames);
-		collector.output(spriteName, AssetType::Animation, Serializer::toBytes(animation));
+		collector.output(spriteName, AssetType::Animation, Serializer::toBytes(animation), {}, "pc", inputFile.name);
 
 		std::move(frames.begin(), frames.end(), std::back_inserter(totalFrames));
 	}
@@ -117,10 +117,10 @@ void SpriteImporter::import(const ImportingAsset& asset, IAssetCollector& collec
 	auto size = atlasImage->getSize();
 	Metadata meta;
 	if (startMeta) {
-		meta = startMeta.get();
+		meta = startMeta.value();
 	}
 	if (palette) {
-		meta.set("palette", palette.get());
+		meta.set("palette", palette.value());
 	}
 	meta.set("width", size.x);
 	meta.set("height", size.y);
@@ -137,10 +137,10 @@ void SpriteImporter::import(const ImportingAsset& asset, IAssetCollector& collec
 	collector.output(spriteSheetName, AssetType::SpriteSheet, Serializer::toBytes(spriteSheet));
 }
 
-String SpriteImporter::getAssetId(const Path& file, const Maybe<Metadata>& metadata) const
+String SpriteImporter::getAssetId(const Path& file, const std::optional<Metadata>& metadata) const
 {
 	if (metadata) {
-		String atlas = metadata.get().getString("atlas", "");
+		String atlas = metadata->getString("atlas", "");
 		if (atlas != "") {
 			return atlas;
 		}
@@ -195,18 +195,25 @@ Animation SpriteImporter::generateAnimation(const String& spriteName, const Stri
 	}
 		
 	std::map<String, AnimationSequence> sequences;
+	std::map<String, std::set<String>> directionsPerSequence;
 
-	for (const auto& frame: frameData) {
+	for (const auto& frame : frameData) {
 		String sequence = frame.sequenceName;
 
 		auto i = sequences.find(sequence);
 		if (i == sequences.end()) {
 			sequences[sequence] = AnimationSequence(sequence, true, false);
 		}
+
+		directionsPerSequence[sequence].insert(frame.direction);
+	}
+
+	for (const auto& frame : frameData) {
+		String sequence = frame.sequenceName;
 		auto& seq = sequences[sequence];
 		if (int(seq.numFrameDefinitions()) == frame.frameNumber) {
 			auto filename = frame.filenames.at(0);
-			if (numExplicitDirs > 0) {
+			if (!directionsPerSequence.at(sequence).empty() && !frame.direction.isEmpty()) {
 				filename = filename.replaceAll("_" + frame.direction, "_%dir%");
 			}
 			seq.addFrame(AnimationFrameDefinition(frame.frameNumber, frame.duration, filename));
@@ -253,14 +260,14 @@ std::unique_ptr<Image> SpriteImporter::generateAtlas(const String& atlasName, st
 
 		Logger::logInfo("Trying " + toString(size.x) + "x" + toString(size.y) + " px...");
 		auto res = BinPack::pack(entries, size);
-		if (res.is_initialized()) {
+		if (res) {
 			// Found a pack
 			if (images.size() > 1) {
 				Logger::logInfo("Atlas \"" + atlasName + "\" generated at " + toString(size.x) + "x" + toString(size.y) + " px with " + toString(images.size()) + " sprites. Total image area is " + toString(totalImageArea) + " px^2, sqrt = " + toString(lround(sqrt(totalImageArea))) + " px.");
 			}
 
 			
-			return makeAtlas(res.get(), size, spriteSheet);
+			return makeAtlas(res.value(), size, spriteSheet);
 		} else {
 			// Try 64x64, then 128x64, 128x128, 256x128, etc
 			if (wide) {
@@ -277,12 +284,20 @@ std::unique_ptr<Image> SpriteImporter::makeAtlas(const std::vector<BinPackResult
 {
 	Vector2i size = shrinkAtlas(result);
 
-	auto image = std::make_unique<Image>(Image::Format::RGBA, size);
-	image->clear(0);
+	std::unique_ptr<Image> atlasImage;
 
 	for (auto& packedImg: result) {
 		ImageData* img = reinterpret_cast<ImageData*>(packedImg.data);
-		image->blitFrom(packedImg.rect.getTopLeft(), *img->img, img->clip, packedImg.rotated);
+
+		if (!atlasImage) {
+			atlasImage = std::make_unique<Image>(img->img->getFormat(), size);
+			atlasImage->clear(0);
+		}
+		if (atlasImage->getFormat() != img->img->getFormat()) {
+			throw Exception("Mixed image formats in atlas.", HalleyExceptions::Tools);
+		}
+		
+		atlasImage->blitFrom(packedImg.rect.getTopLeft(), *img->img, img->clip, packedImg.rotated);
 
 		const auto borderTL = img->clip.getTopLeft();
 		const auto borderBR = img->img->getSize() - img->clip.getSize() - borderTL;
@@ -303,7 +318,7 @@ std::unique_ptr<Image> SpriteImporter::makeAtlas(const std::vector<BinPackResult
 		}
 	}
 
-	return image;
+	return atlasImage;
 }
 
 Vector2i SpriteImporter::shrinkAtlas(const std::vector<BinPackResult>& results) const

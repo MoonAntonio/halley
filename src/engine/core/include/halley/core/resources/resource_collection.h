@@ -35,12 +35,14 @@ namespace Halley
 
 	public:
 		using ResourceLoaderFunc = std::function<std::shared_ptr<Resource>(const String&, ResourceLoadPriority)>;
+		using ResourceEnumeratorFunc = std::function<std::vector<String>()>;
 
 		explicit ResourceCollectionBase(Resources& parent, AssetType type);
 		virtual ~ResourceCollectionBase() {}
 
 		void setResource(int curDepth, const String& assetId, std::shared_ptr<Resource> resource);
 		void setResourceLoader(ResourceLoaderFunc loader);
+		void setResourceEnumerator(ResourceEnumeratorFunc enumerator);
 
 		void clear();
 		void unload(const String& assetId);
@@ -49,6 +51,8 @@ namespace Halley
 
 		void reload(const String& assetId);
 		void purge(const String& assetId);
+
+		std::shared_ptr<Resource> getUntyped(const String& name, ResourceLoadPriority priority = ResourceLoadPriority::Normal);
 
 		std::vector<String> enumerate() const;
 
@@ -63,6 +67,7 @@ namespace Halley
 		HashMap<String, Wrapper> resources;
 		AssetType type;
 		ResourceLoaderFunc resourceLoader;
+		ResourceEnumeratorFunc resourceEnumerator;
 	};
 
 	template <typename T>

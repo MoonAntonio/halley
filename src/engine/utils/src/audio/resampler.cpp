@@ -1,5 +1,5 @@
 #include "halley/audio/resampler.h"
-#include "../../contrib/speex/speex_resampler.h"
+#include "../../../../contrib/speex/speex_resampler.h"
 
 using namespace Halley;
 
@@ -50,6 +50,23 @@ AudioResamplerResult AudioResampler::resampleInterleaved(gsl::span<const short> 
 	AudioResamplerResult result;
 	result.nRead = inLen;
 	result.nWritten = outLen;
+	return result;
+}
+
+AudioResamplerResult AudioResampler::resampleNoninterleaved(gsl::span<const float> src, gsl::span<float> dst, const size_t numChannels)
+{
+	AudioResamplerResult result;
+	result.nRead = 0;
+	result.nWritten = 0;
+
+	for (size_t i = 0; i < numChannels; ++i) {
+		unsigned inLen = unsigned(src.size() / nChannels);
+		unsigned outLen = unsigned(dst.size() / nChannels);
+		speex_resampler_process_float(resampler.get(), unsigned(i), src.subspan(result.nRead).data(), &inLen, dst.subspan(result.nWritten).data(), &outLen);
+		result.nRead += inLen;
+		result.nWritten += outLen;
+	}
+
 	return result;
 }
 

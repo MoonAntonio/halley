@@ -6,8 +6,8 @@
 
 using namespace Halley;
 
-UIList::UIList(const String& id, UIStyle style, UISizerType orientation, int nColumns)
-	: UIWidget(id, {}, UISizer(orientation, style.getFloat("gap"), nColumns), style.getBorder("innerBorder"))
+UIList::UIList(String id, UIStyle style, UISizerType orientation, int nColumns)
+	: UIWidget(std::move(id), {}, UISizer(orientation, style.getFloat("gap"), nColumns), style.getBorder("innerBorder"))
 	, style(style)
 	, orientation(orientation)
 	, nColumns(nColumns)
@@ -100,7 +100,7 @@ void UIList::addTextItem(const String& id, const LocalisedString& label, float m
 	addItem(item);
 }
 
-void UIList::addImage(const String& id, std::shared_ptr<UIImage> image, float proportion, Vector4f border, int fillFlags, Maybe<UIStyle> styleOverride)
+void UIList::addImage(const String& id, std::shared_ptr<UIImage> image, float proportion, Vector4f border, int fillFlags, std::optional<UIStyle> styleOverride)
 {
 	if (style.hasColour("selectedImageColour")) {
 		image->setSelectable(image->getSprite().getColour(), style.getColour("selectedImageColour"));
@@ -109,7 +109,7 @@ void UIList::addImage(const String& id, std::shared_ptr<UIImage> image, float pr
 	addItem(id, image, proportion, border, fillFlags, styleOverride);
 }
 
-void UIList::addItem(const String& id, std::shared_ptr<IUIElement> element, float proportion, Vector4f border, int fillFlags, Maybe<UIStyle> styleOverride)
+void UIList::addItem(const String& id, std::shared_ptr<IUIElement> element, float proportion, Vector4f border, int fillFlags, std::optional<UIStyle> styleOverride)
 {
 	const auto& itemStyle = styleOverride ? *styleOverride : style;
 	auto item = std::make_shared<UIListItem>(id, *this, itemStyle.getSubStyle("item"), int(getNumberOfItems()), itemStyle.getBorder("extraMouseBorder"));
@@ -121,7 +121,6 @@ void UIList::clear()
 {
 	items.clear();
 	curOption = -1;
-	curOptionHighlight = -1;
 	UIWidget::clear();
 }
 
@@ -145,7 +144,7 @@ void UIList::setItemEnabled(const String& id, bool enabled)
 
 void UIList::setItemActive(const String& id, bool active)
 {
-	auto curId = getSelectedOptionId();
+	const auto curId = getSelectedOptionId();
 	for (auto& item: items) {
 		if (item->getId() == id) {
 			if (!active) {
@@ -161,12 +160,31 @@ void UIList::setItemActive(const String& id, bool active)
 	}
 }
 
-void UIList::addItem(std::shared_ptr<UIListItem> item)
+void UIList::filterOptions(const String& filter)
 {
-	add(item, uniformSizedItems ? 1.0f : 0.0f);
-	bool wasEmpty = getNumberOfItems() == 0;
+	auto filterLower = filter.asciiLower();
+	
+	const auto curId = getSelectedOptionId();
+	for (auto& item: items) {
+		const bool active = item->getId().asciiLower().contains(filterLower);
+		if (!active) {
+			item->setSelected(false);
+		}
+		item->setActive(active);
+	}
+	reassignIds();
+	if (!setSelectedOptionId(curId)) {
+		curOption = -1;
+		setSelectedOption(0);
+	}
+}
+
+void UIList::addItem(std::shared_ptr<UIListItem> item, Vector4f border, int fillFlags)
+{
+	add(item, uniformSizedItems ? 1.0f : 0.0f, border, fillFlags);
 	items.push_back(item);
-	if (wasEmpty) {
+
+	if (getNumberOfItems() == 1) {
 		curOption = -1;
 		setSelectedOption(0);
 	}
@@ -193,12 +211,14 @@ void UIList::onCancel()
 void UIList::reassignIds()
 {
 	int i = 0;
+	int j = 0;
 	for (auto& item: items) {
 		if (item->isActive() && item->isEnabled()) {
 			item->setIndex(i++);
 		} else {
 			item->setIndex(-1);
 		}
+		item->setAbsoluteIndex(j++);
 	}
 }
 
@@ -228,14 +248,39 @@ std::shared_ptr<UIListItem> UIList::getItem(const String& id) const
 	throw Exception("Invalid item", HalleyExceptions::UI);
 }
 
-bool UIList::canDrag() const
+std::shared_ptr<UIListItem> UIList::tryGetItem(const String& id) const
+{
+	for (auto& item : items) {
+		if (item->getId() == id) {
+			return item;
+		}
+	}
+	return {};
+}
+
+bool UIList::isDragEnabled() const
 {
 	return dragEnabled;
 }
 
-void UIList::setDrag(bool drag)
+void UIList::setDragEnabled(bool drag)
 {
 	dragEnabled = drag;
+}
+
+bool UIList::isDragOutsideEnabled() const
+{
+	return dragOutsideEnabled;
+}
+
+void UIList::setDragOutsideEnabled(bool dragOutside)
+{
+	dragOutsideEnabled = dragOutside;
+}
+
+bool UIList::canDragListItem(const UIListItem& listItem)
+{
+	return isDragEnabled();
 }
 
 void UIList::setUniformSizedItems(bool enabled)
@@ -244,6 +289,11 @@ void UIList::setUniformSizedItems(bool enabled)
 }
 
 bool UIList::ignoreClip() const
+{
+	return true;
+}
+
+bool UIList::canReceiveFocus() const
 {
 	return true;
 }
@@ -265,11 +315,6 @@ void UIList::swapItems(int idxA, int idxB)
 		curOption = idxB;
 	} else if (curOption == idxB) {
 		curOption = idxA;
-	}
-	if (curOptionHighlight == idxA) {
-		curOptionHighlight = idxB;
-	} else if (curOptionHighlight == idxB) {
-		curOptionHighlight = idxA;
 	}
 
 	std::swap(items[idxA], items[idxB]);
@@ -399,7 +444,7 @@ void UIList::onItemDoubleClicked(UIListItem& item)
 	onAccept();
 }
 
-void UIList::onItemDragged(UIListItem& item, int index, Vector2f pos)
+void UIList::onItemDragging(UIListItem& item, int index, Vector2f pos)
 {
 	const int axis = orientation == UISizerType::Horizontal ? 0 : 1;
 
@@ -418,12 +463,18 @@ void UIList::onItemDragged(UIListItem& item, int index, Vector2f pos)
 	}
 }
 
+void UIList::onItemDoneDragging(UIListItem& item, int index, Vector2f pos)
+{
+}
+
 UIListItem::UIListItem(const String& id, UIList& parent, UIStyle style, int index, Vector4f extraMouseArea)
-	: UIClickable(id, {}, UISizer(UISizerType::Vertical), style.getBorder("innerBorder"))
+	: UIClickable(id, {}, UISizer(UISizerType::Horizontal), style.getBorder("innerBorder"))
 	, parent(parent)
 	, style(style)
 	, index(index)
+	, absoluteIndex(index)
 	, extraMouseArea(extraMouseArea)
+	, dragWidget(this)
 {
 	sprite = style.getSprite("normal");
 }
@@ -480,11 +531,15 @@ void UIListItem::update(Time t, bool moved)
 
 	if (dragged) {
 		setChildLayerAdjustment(1);
-		
-		const auto parentRect = parent.getRect();
-		const auto myTargetRect = Rect4f(curDragPos, curDragPos + getSize());
-		setPosition(myTargetRect.fitWithin(parentRect).getTopLeft());
-		layout();
+
+		auto pos = curDragPos;
+		if (!parent.dragOutsideEnabled) {
+			const auto parentRect = parent.getRect();
+			const auto myTargetRect = Rect4f(curDragPos, curDragPos + dragWidget->getSize());
+			pos = myTargetRect.fitWithin(parentRect).getTopLeft();
+		}
+		dragWidget->setPosition(pos);
+		dragWidget->layout();
 		dirty = true;
 	} else  {
 		setChildLayerAdjustment(0);
@@ -518,8 +573,9 @@ void UIListItem::update(Time t, bool moved)
 
 void UIListItem::onMouseOver(Vector2f mousePos)
 {
-	if (parent.canDrag() && held /* && (mousePos - mouseStartPos).length() > 2.0f */) {
+	if (held && parent.canDragListItem(*this) && (mousePos - mouseStartPos).length() > 3.0f) {
 		dragged = true;
+		setNoClipChildren(parent.isDragOutsideEnabled());
 	}
 	if (dragged) {
 		setDragPos(mousePos - mouseStartPos + myStartPos);
@@ -533,8 +589,19 @@ void UIListItem::pressMouse(Vector2f mousePos, int button)
 		held = true;
 		dragged = false;
 		mouseStartPos = mousePos;
-		myStartPos = getPosition();
+
+		if (!dragWidget) {
+			dragWidget = this;
+		}
+		myStartPos = dragWidget->getPosition();
+		dragWidgetOffset = myStartPos - getPosition();
+
 		parent.onItemClicked(*this);
+	}
+
+	if (button == 2) {
+		held = false;
+		dragged = false;
 	}
 }
 
@@ -545,7 +612,12 @@ void UIListItem::releaseMouse(Vector2f mousePos, int button)
 		if (held) {
 			onMouseOver(mousePos);
 			held = false;
-			dragged = false;
+
+			if (dragged) {
+				dragged = false;
+				setNoClipChildren(false);
+				parent.onItemDoneDragging(*this, index, curDragPos);
+			}
 		}
 	}
 }
@@ -553,7 +625,7 @@ void UIListItem::releaseMouse(Vector2f mousePos, int button)
 void UIListItem::setDragPos(Vector2f pos)
 {
 	curDragPos = pos.round();
-	parent.onItemDragged(*this, index, curDragPos);
+	parent.onItemDragging(*this, index, curDragPos);
 }
 
 void UIListItem::doSetState(State state)
@@ -586,7 +658,11 @@ void UIListItem::updateSpritePosition()
 {
 	if (sprite.hasMaterial()) {
 		Vector2f pos = getPosition();
-		sprite.scaleTo(getSize()).setPos(pos);
+
+		if (dragged) {
+			pos = dragWidget->getPosition() - dragWidgetOffset;
+		}
+		sprite.scaleTo(getSize() - innerBorder.xy() - innerBorder.zw()).setPos(pos + innerBorder.xy());
 	}
 }
 
@@ -605,18 +681,38 @@ void UIListItem::setIndex(int i)
 	index = i;
 }
 
+int UIListItem::getAbsoluteIndex() const
+{
+	return absoluteIndex;
+}
+
+void UIListItem::setAbsoluteIndex(int index)
+{
+	absoluteIndex = index;
+}
+
 Rect4f UIListItem::getMouseRect() const
 {
 	auto rect = UIWidget::getMouseRect();
 	if (rect.getWidth() <= 0.01f || rect.getHeight() <= 0.01f) {
 		return rect;
 	}
-	return Rect4f(rect.getTopLeft() - Vector2f(extraMouseArea.x, extraMouseArea.y), rect.getBottomRight() + Vector2f(extraMouseArea.z, extraMouseArea.w));
+	return Rect4f(rect.getTopLeft() - extraMouseArea.xy() + innerBorder.xy(), rect.getBottomRight() + extraMouseArea.zw() - innerBorder.zw());
 }
 
 Rect4f UIListItem::getRawRect() const
 {
 	return Rect4f(getPosition(), getPosition() + getSize());
+}
+
+void UIListItem::setClickableInnerBorder(Vector4f ib)
+{
+	innerBorder = ib;
+}
+
+Vector4f UIListItem::getClickableInnerBorder() const
+{
+	return innerBorder;
 }
 
 void UIListItem::notifySwap(Vector2f to)
@@ -637,6 +733,11 @@ bool UIListItem::canSwap() const
 Vector2f UIListItem::getOrigPosition() const
 {
 	return origPos;
+}
+
+void UIListItem::setDraggableSubWidget(UIWidget* widget)
+{
+	dragWidget = widget;
 }
 
 bool UIList::setSelectedOptionId(const String& id)

@@ -72,24 +72,28 @@ int SpritePainterEntry::getMask() const
 	return mask;
 }
 
-void SpritePainter::start(size_t nSprites)
+void SpritePainter::start()
 {
-	if (sprites.capacity() < nSprites) {
-		sprites.reserve(nSprites);
-	}
 	sprites.clear();
 	cachedSprites.clear();
 	cachedText.clear();
 }
 
+void SpritePainter::start(size_t)
+{
+	start();
+}
+
 void SpritePainter::add(const Sprite& sprite, int mask, int layer, float tieBreaker)
 {
+	Expects(mask >= 0);
 	sprites.push_back(SpritePainterEntry(sprite, mask, layer, tieBreaker));
 	dirty = true;
 }
 
 void SpritePainter::addCopy(const Sprite& sprite, int mask, int layer, float tieBreaker)
 {
+	Expects(mask >= 0);
 	sprites.push_back(SpritePainterEntry(SpritePainterEntryType::SpriteCached, cachedSprites.size(), mask, layer, tieBreaker));
 	cachedSprites.push_back(sprite);
 	dirty = true;
@@ -97,12 +101,14 @@ void SpritePainter::addCopy(const Sprite& sprite, int mask, int layer, float tie
 
 void SpritePainter::add(const TextRenderer& text, int mask, int layer, float tieBreaker)
 {
+	Expects(mask >= 0);
 	sprites.push_back(SpritePainterEntry(text, mask, layer, tieBreaker));
 	dirty = true;
 }
 
 void SpritePainter::addCopy(const TextRenderer& text, int mask, int layer, float tieBreaker)
 {
+	Expects(mask >= 0);
 	sprites.push_back(SpritePainterEntry(SpritePainterEntryType::TextCached, cachedText.size(), mask, layer, tieBreaker));
 	cachedText.push_back(text);
 	dirty = true;

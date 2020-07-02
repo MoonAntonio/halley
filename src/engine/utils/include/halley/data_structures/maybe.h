@@ -1,13 +1,12 @@
 #pragma once
 
-#include <array>
-#include <functional>
-#include <cassert>
-#include "halley/support/exception.h"
-#include <boost/optional.hpp>
+#include <optional>
 
 namespace Halley
 {
 	template <typename T>
-	using Maybe = boost::optional<T>;
+	using Maybe [[deprecated]] = std::optional<T>;
+
+	template <typename T>
+	using MaybeRefWrap = std::optional<std::reference_wrapper<T>>;
 }

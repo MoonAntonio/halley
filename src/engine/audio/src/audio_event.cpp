@@ -8,6 +8,7 @@
 #include "halley/core/resources/resources.h"
 #include "audio_source_clip.h"
 #include "audio_filter_resample.h"
+#include "halley/support/logger.h"
 
 using namespace Halley;
 
@@ -19,13 +20,13 @@ AudioEvent::AudioEvent(const ConfigNode& config)
 		for (auto& actionNode: config["actions"]) {
 			const auto type = fromString<AudioEventActionType>(actionNode["type"].asString());
 			if (type == AudioEventActionType::Play) {
-				actions.push_back(std::make_unique<AudioEventActionPlay>(actionNode));
+				actions.push_back(std::make_unique<AudioEventActionPlay>(*this, actionNode));
 			}
 		}
 	}
 }
 
-void AudioEvent::run(AudioEngine& engine, size_t id, const AudioPosition& position) const
+void AudioEvent::run(AudioEngine& engine, uint32_t id, const AudioPosition& position) const
 {
 	for (auto& a: actions) {
 		a->run(engine, id, position);
@@ -50,7 +51,7 @@ void AudioEvent::deserialize(Deserializer& s)
 		s >> name;
 		auto type = fromString<AudioEventActionType>(name);
 		if (type == AudioEventActionType::Play) {
-			auto newAction = std::make_unique<AudioEventActionPlay>();
+			auto newAction = std::make_unique<AudioEventActionPlay>(*this);
 			s >> *newAction;
 			actions.push_back(std::move(newAction));
 		}
@@ -71,9 +72,13 @@ std::shared_ptr<AudioEvent> AudioEvent::loadResource(ResourceLoader& loader)
 	return event;
 }
 
-AudioEventActionPlay::AudioEventActionPlay() = default;
+AudioEventActionPlay::AudioEventActionPlay(AudioEvent& event)
+	: event(event)
+{
+}
 
-AudioEventActionPlay::AudioEventActionPlay(const ConfigNode& node)
+AudioEventActionPlay::AudioEventActionPlay(AudioEvent& event, const ConfigNode& node)
+	: event(event)
 {
 	group = node["group"].asString("");
 	if (node.hasKey("clips")) {
@@ -103,7 +108,7 @@ AudioEventActionPlay::AudioEventActionPlay(const ConfigNode& node)
 	loop = node["loop"].asBool(false);
 }
 
-void AudioEventActionPlay::run(AudioEngine& engine, size_t id, const AudioPosition& position) const
+void AudioEventActionPlay::run(AudioEngine& engine, uint32_t id, const AudioPosition& position) const
 {
 	if (clips.empty()) {
 		return;
@@ -130,7 +135,7 @@ void AudioEventActionPlay::run(AudioEngine& engine, size_t id, const AudioPositi
 	if (std::abs(curPitch - 1.0f) > 0.01f) {
 		source = std::make_shared<AudioFilterResample>(source, int(lround(sampleRate * curPitch)), sampleRate, engine.getPool());
 	}
-	engine.addEmitter(id, std::make_unique<AudioEmitter>(source, position, curVolume, engine.getGroupId(group)));
+	engine.addEmitter(id, std::make_unique<AudioVoice>(source, position, curVolume, engine.getGroupId(group)));
 }
 
 AudioEventActionType AudioEventActionPlay::getType() const
@@ -169,8 +174,9 @@ void AudioEventActionPlay::loadDependencies(const Resources& resources)
 		for (auto& c: clips) {
 			if (resources.exists<AudioClip>(c)) {
 				clipData.push_back(resources.get<AudioClip>(c));
-			}
-			else {
+			} else {
+				
+				Logger::logError("AudioClip not found: \"" + c + "\", needed by \"" + event.getAssetId() + "\".");
 				clipData.push_back(std::shared_ptr<AudioClip>());
 			}
 		}

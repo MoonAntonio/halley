@@ -24,15 +24,6 @@ void DummyAudioAPI::stopPlayback()
 {
 }
 
-void DummyAudioAPI::queueAudio(gsl::span<const float> data)
-{
-}
-
-bool DummyAudioAPI::needsMoreAudio()
-{
-	return false;
-}
-
 void DummyAudioAPI::init()
 {
 }
@@ -41,7 +32,16 @@ void DummyAudioAPI::deInit()
 {
 }
 
+bool DummyAudioAPI::needsMoreAudio()
+{
+	return false;
+}
+
 bool DummyAudioAPI::needsAudioThread() const
 {
 	return false;
+}
+
+void DummyAudioAPI::onAudioAvailable()
+{
 }

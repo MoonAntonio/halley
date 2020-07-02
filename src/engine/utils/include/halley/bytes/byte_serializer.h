@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <utility>
 #include <set>
-#include <boost/optional.hpp>
+#include "halley/data_structures/maybe.h"
 #include "halley/maths/vector4.h"
 
 namespace Halley {
@@ -29,7 +29,7 @@ namespace Halley {
 			Serializer dry;
 			f(dry);
 			Bytes result(dry.getSize());
-			Serializer s(gsl::as_writeable_bytes(gsl::span<Halley::Byte>(result)));
+			Serializer s(gsl::as_writable_bytes(gsl::span<Halley::Byte>(result)));
 			f(s);
 			return result;
 		}
@@ -137,10 +137,10 @@ namespace Halley {
 		}
 		
 		template <typename T>
-		Serializer& operator<<(const boost::optional<T>& p)
+		Serializer& operator<<(const std::optional<T>& p)
 		{
 			if (p) {
-				return *this << true << p.get();
+				return *this << true << p.value();
 			} else {
 				return *this << false;
 			}
@@ -273,7 +273,7 @@ namespace Halley {
 		{
 			unsigned int sz;
 			*this >> sz;
-			ensureSufficientBytesRemaining(sz * 2); // Expect at least two bytes per map entry
+			ensureSufficientBytesRemaining(size_t(sz) * 2); // Expect at least two bytes per map entry
 
 			for (unsigned int i = 0; i < sz; i++) {
 				T key;
@@ -357,7 +357,7 @@ namespace Halley {
 		}
 
 		template <typename T>
-		Deserializer& operator>>(boost::optional<T>& p)
+		Deserializer& operator>>(std::optional<T>& p)
 		{
 			bool present;
 			*this >> present;
@@ -366,7 +366,7 @@ namespace Halley {
 				*this >> tmp;
 				p = tmp;
 			} else {
-				p = boost::optional<T>();
+				p = std::optional<T>();
 			}
 			return *this;
 		}

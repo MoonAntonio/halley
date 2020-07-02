@@ -10,8 +10,8 @@
 
 using namespace Halley;
 
-UITextInput::UITextInput(std::shared_ptr<InputKeyboard> keyboard, String id, UIStyle style, String text, LocalisedString ghostText)
-	: UIWidget(id, {}, UISizer(UISizerType::Vertical), style.getBorder("innerBorder"))
+UITextInput::UITextInput(std::shared_ptr<InputKeyboard> keyboard, String id, UIStyle style, String text, LocalisedString ghostText, std::shared_ptr<UIValidator> validator)
+	: UIWidget(id, Vector2f(style.getFloat("minSize"), style.getFloat("minSize")), UISizer(UISizerType::Vertical), style.getBorder("innerBorder"))
 	, keyboard(std::move(keyboard))
 	, style(style)
 	, sprite(style.getSprite("box"))
@@ -22,6 +22,7 @@ UITextInput::UITextInput(std::shared_ptr<InputKeyboard> keyboard, String id, UIS
 	, ghostText(std::move(ghostText))
 {
 	label.setText(text);
+	setValidator(std::move(validator));
 }
 
 bool UITextInput::canInteractWithMouse() const
@@ -39,7 +40,7 @@ UITextInput& UITextInput::setText(StringUTF32 t)
 {
 	if (t != text.getText()) {
 		text.setText(std::move(t));
-		onTextModified();
+		onMaybeTextModified();
 	}
 	return *this;
 }
@@ -60,12 +61,12 @@ LocalisedString UITextInput::getGhostText() const
 	return ghostText;
 }
 
-Maybe<int> UITextInput::getMaxLength() const
+std::optional<int> UITextInput::getMaxLength() const
 {
 	return text.getMaxLength();
 }
 
-void UITextInput::setMaxLength(Maybe<int> length)
+void UITextInput::setMaxLength(std::optional<int> length)
 {
 	text.setLengthLimits(0, length);
 }
@@ -94,6 +95,21 @@ void UITextInput::setAutoCompleteHandle(AutoCompleteHandle handle)
 {
 	autoCompleteHandle = std::move(handle);
 	updateAutoComplete();
+}
+
+bool UITextInput::canReceiveFocus() const
+{
+	return true;
+}
+
+void UITextInput::setReadOnly(bool enabled)
+{
+	text.setReadOnly(enabled);
+}
+
+bool UITextInput::isReadOnly() const
+{
+	return text.isReadOnly();
 }
 
 void UITextInput::draw(UIPainter& painter) const
@@ -135,7 +151,7 @@ void UITextInput::updateTextInput()
 
 	updateCaret();
 
-	onTextModified();
+	onMaybeTextModified();
 	
 	if (keyboard->isButtonPressed(Keys::Enter) || keyboard->isButtonPressed(Keys::KP_Enter)) {
 		if (!isMultiLine) {
@@ -152,6 +168,14 @@ void UITextInput::updateCaret()
 		caretShowing = true;
 		caretPos = pos;
 		caretPhysicalPos = label.getCharacterPosition(caretPos, text.getText()).x;
+	}
+}
+
+void UITextInput::onMaybeTextModified()
+{
+	if (lastText != text.getText()) {
+		lastText = text.getText();
+		onTextModified();
 	}
 }
 

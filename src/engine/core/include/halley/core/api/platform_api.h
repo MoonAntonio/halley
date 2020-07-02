@@ -75,14 +75,14 @@ namespace Halley
 		
 		bool includes(const OnlineCapabilities& other)
 		{
-			auto check = [](bool has, bool otherHas)
+			auto checkInclusion = [](bool has, bool otherHas)
 			{
 				return otherHas ? has : true;
 			};
-			return check(onlinePlay, other.onlinePlay)
-				&& check(ugc, other.ugc)
-				&& check(communication, other.communication)
-				&& check(viewProfiles, other.viewProfiles);
+			return checkInclusion(onlinePlay, other.onlinePlay)
+				&& checkInclusion(ugc, other.ugc)
+				&& checkInclusion(communication, other.communication)
+				&& checkInclusion(viewProfiles, other.viewProfiles);
 		}
 	};
 
@@ -224,7 +224,12 @@ namespace Halley
 		virtual void handleOnlineError() {}
 
 		virtual bool hasDLC(const String& key) const { return false; }
-		virtual void requestGetDLC(const String& key) {}
+		virtual Future<bool> requestGetDLC(const String& key)
+		{
+			Promise<bool> result;
+			result.setValue(false);
+			return result.getFuture();
+		}
 
 		// Return empty unique_ptr if not supported
 		virtual std::unique_ptr<MultiplayerSession> makeMultiplayerSession(const String& key) { return {}; }
@@ -272,5 +277,8 @@ namespace Halley
 
 		virtual bool hasKeyboard() const { return false; }
 		virtual std::shared_ptr<InputKeyboard> getKeyboard() const { return {}; }
+
+		// Returns arbitrary platform-specific data
+		virtual String getStringData(const String& key) { return ""; }
 	};
 }

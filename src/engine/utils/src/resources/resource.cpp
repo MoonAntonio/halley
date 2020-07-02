@@ -5,9 +5,14 @@ using namespace Halley;
 
 Resource::~Resource() = default;
 
-void Resource::setMeta(const Metadata& m)
+void Resource::setMeta(Metadata m)
 {
-	meta = m;
+	// Only allow setting meta once to avoid a race condition
+	// For example, resource_collection.cpp would try to set a meta on a Texture while texture.cpp is trying to load it and referencing its data
+	if (!metaSet) {
+		meta = std::move(m);
+		metaSet = true;
+	}
 }
 
 const Metadata& Resource::getMeta() const
@@ -15,9 +20,14 @@ const Metadata& Resource::getMeta() const
 	return meta;
 }
 
-void Resource::setAssetId(const String& n)
+bool Resource::isMetaSet() const
 {
-	assetId = n;
+	return metaSet;
+}
+
+void Resource::setAssetId(String id)
+{
+	assetId = std::move(id);
 }
 
 const String& Resource::getAssetId() const

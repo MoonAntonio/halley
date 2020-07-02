@@ -2,7 +2,7 @@
 #include "halley/file_formats/config_file.h"
 #include "halley/tools/packer/asset_packer.h"
 #include <yaml-cpp/yaml.h>
-#include "../assets/importers/config_importer.h"
+#include "halley/tools/yaml/yaml_convert.h"
 using namespace Halley;
 
 AssetPackManifestEntry::AssetPackManifestEntry()
@@ -47,11 +47,7 @@ const String& AssetPackManifestEntry::getEncryptionKey() const
 
 AssetPackManifest::AssetPackManifest(const Bytes& data)
 {
-	ConfigFile config;
-	String strData(reinterpret_cast<const char*>(data.data()), data.size());
-	YAML::Node root = YAML::Load(strData.cppStr());
-	config.getRoot() = ConfigImporter::parseYAMLNode(root);
-	load(config);
+	load(YAMLConvert::parseConfig(data));
 }
 
 AssetPackManifest::AssetPackManifest(const ConfigFile& file)
@@ -76,7 +72,7 @@ void AssetPackManifest::load(const ConfigFile& file)
 	}
 }
 
-Maybe<std::reference_wrapper<const AssetPackManifestEntry>> AssetPackManifest::getPack(const String& asset) const
+std::optional<std::reference_wrapper<const AssetPackManifestEntry>> AssetPackManifest::getPack(const String& asset) const
 {
 	for (auto& e: exclude) {
 		if (asset.contains(e)) {

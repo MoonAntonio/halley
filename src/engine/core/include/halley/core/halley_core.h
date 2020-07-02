@@ -4,11 +4,14 @@ namespace Halley {} // Get GitHub to realise this is C++ :3
 
 #include "api/halley_api.h"
 
+#include "entry/entry_point.h"
+
 #include "game/core.h"
 #include "game/environment.h"
 #include "game/game.h"
 #include "game/game_console.h"
 #include "game/game_platform.h"
+#include "game/scene_editor_interface.h"
 
 #include "graphics/blend.h"
 #include "graphics/painter.h"
@@ -27,6 +30,7 @@ namespace Halley {} // Get GitHub to realise this is C++ :3
 
 #include "graphics/movie/movie_player.h"
 
+#include "graphics/render_target/render_surface.h"
 #include "graphics/render_target/render_target.h"
 #include "graphics/render_target/render_target_screen.h"
 #include "graphics/render_target/render_target_texture.h"
@@ -55,9 +59,6 @@ namespace Halley {} // Get GitHub to realise this is C++ :3
 #include "resources/resource_locator.h"
 
 #include "stage/stage.h"
-#include "stage/entity_stage.h"
-
-#include "utils/world_stats.h"
 
 #include "devcon/devcon_client.h"
 #include "devcon/devcon_server.h"

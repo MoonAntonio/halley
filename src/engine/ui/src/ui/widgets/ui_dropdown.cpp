@@ -10,10 +10,10 @@
 using namespace Halley;
 
 UIDropdown::UIDropdown(String id, UIStyle style, UIStyle scrollbarStyle, UIStyle listStyle, std::vector<LocalisedString> os, int defaultOption)
-	: UIClickable(id, {})
+	: UIClickable(std::move(id), Vector2f(style.getFloat("minSize"), style.getFloat("minSize")))
 	, style(style)
-	, scrollbarStyle(scrollbarStyle)
-	, listStyle(listStyle)
+	, scrollbarStyle(std::move(scrollbarStyle))
+	, listStyle(std::move(listStyle))
 	, curOption(defaultOption)
 {
 	sprite = style.getSprite("normal");
@@ -141,6 +141,11 @@ void UIDropdown::onManualControlActivate()
 	open();
 }
 
+bool UIDropdown::canReceiveFocus() const
+{
+	return true;
+}
+
 void UIDropdown::draw(UIPainter& painter) const
 {
 	painter.draw(sprite);
@@ -225,10 +230,10 @@ void UIDropdown::open()
 		auto distanceFromBottom = getRoot()->getRect().getBottom() - getRect().getBottom() - 5.0f;
 		auto height = distanceFromBottom < 0 ? standardHeight : std::min(standardHeight, distanceFromBottom);
 
-		scrollPane = std::make_shared<UIScrollPane>("", Vector2f(0, height), UISizer(UISizerType::Vertical, 0));
+		scrollPane = std::make_shared<UIScrollPane>(getId() + "_pane", Vector2f(0, height), UISizer(UISizerType::Vertical, 0));
 		scrollPane->add(dropdownList);
 
-		auto scrollBar = std::make_shared<UIScrollBar>(UIScrollDirection::Vertical, scrollbarStyle);
+		auto scrollBar = std::make_shared<UIScrollBar>(getId() + "_vbar", UIScrollDirection::Vertical, scrollbarStyle);
 		scrollBar->setScrollPane(*scrollPane);
 
 		dropdownWindow = std::make_shared<UIImage>(style.getSprite("background"), UISizer(UISizerType::Horizontal), style.getBorder("innerBorder"));

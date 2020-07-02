@@ -16,7 +16,8 @@ namespace Halley {
 		virtual ~FamilyBindingBase();
 
 	protected:
-		FamilyBindingBase(FamilyMaskType readMask, FamilyMaskType writeMask);
+		void doInit(FamilyMaskType readMask, FamilyMaskType writeMask);
+		
 		void* getElement(size_t index) const { return family->getElement(index); }
 		virtual void bindFamily(World& world) = 0;
 		void setFamily(Family* family);
@@ -32,8 +33,8 @@ namespace Halley {
 		friend class Family;
 
 		Family* family = nullptr;
-		const FamilyMaskType readMask;
-		const FamilyMaskType writeMask;
+		FamilyMaskType readMask;
+		FamilyMaskType writeMask;
 		std::function<void(void*, size_t)> addedCallback;
 		std::function<void(void*, size_t)> removedCallback;
 	};
@@ -42,8 +43,6 @@ namespace Halley {
 	class FamilyBinding : public FamilyBindingBase
 	{
 	public:
-		FamilyBinding() : FamilyBindingBase(T::Type::readMask(), T::Type::writeMask()) {}
-
 		T& operator[](size_t index) {
 			Expects(index < count());
 			return *reinterpret_cast<T*>(getElement(index));
@@ -136,7 +135,14 @@ namespace Halley {
 
 	protected:
 		void bindFamily(World& world) override {
+			init(world.getMaskStorage());
 			setFamily(&world.getFamily<T>());
+		}
+		
+	private:
+		void init(MaskStorage& storage)
+		{
+			doInit(T::Type::readMask(storage), T::Type::writeMask(storage));
 		}
 	};
 }

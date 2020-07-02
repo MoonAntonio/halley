@@ -27,8 +27,10 @@ void AudioMixer::mixAudio(gsl::span<const AudioSamplePack> src, gsl::span<AudioS
 	}
 }
 
-void AudioMixer::interleaveChannels(gsl::span<AudioSamplePack> dstBuffer, gsl::span<AudioBuffer*> src)
+void AudioMixer::interleaveChannels(gsl::span<AudioSamplePack> dstBuffer, gsl::span<AudioBuffer*> srcs)
 {
+	Expects(srcs.size() == 2);
+	
 	size_t n = 0;
 	for (size_t i = 0; i < size_t(dstBuffer.size()); ++i) {
 		gsl::span<AudioConfig::SampleFormat> dst = dstBuffer[i].samples;
@@ -37,16 +39,26 @@ void AudioMixer::interleaveChannels(gsl::span<AudioSamplePack> dstBuffer, gsl::s
 
 		for (size_t j = 0; j < AudioSamplePack::NumSamples / 2; ++j) {
 			size_t srcPos = j + srcOff;
-			dst[2 * j] = src[0]->packs[srcIdx].samples[srcPos];
-			dst[2 * j + 1] = src[1]->packs[srcIdx].samples[srcPos];
+			dst[2 * j] = srcs[0]->packs[srcIdx].samples[srcPos];
+			dst[2 * j + 1] = srcs[1]->packs[srcIdx].samples[srcPos];
 			n += 2;
 		}
 	}
 }
 
+void AudioMixer::concatenateChannels(gsl::span<AudioSamplePack> dst, gsl::span<AudioBuffer*> srcs)
+{
+	size_t pos = 0;
+	for (size_t i = 0; i < size_t(srcs.size()); ++i) {
+		const size_t nBytes = srcs[i]->packs.size() * sizeof(AudioSamplePack);
+		memcpy(dst.subspan(pos, nBytes).data(), srcs[i]->packs.data(), nBytes);
+		pos += nBytes;
+	}
+}
+
 void AudioMixer::compressRange(gsl::span<AudioSamplePack> buffer)
 {
-	for (ptrdiff_t i = 0; i < buffer.size(); ++i) {
+	for (size_t i = 0; i < buffer.size(); ++i) {
 		for (size_t j = 0; j < AudioSamplePack::NumSamples; ++j) {
 			float& sample = buffer[i].samples[j];
 			sample = std::max(-0.99995f, std::min(sample, 0.99995f));

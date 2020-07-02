@@ -25,6 +25,7 @@ set(SOURCES
         "src/file_formats/text_reader.cpp"
         "src/file_formats/xml_file.cpp"
         "src/maths/aabb.cpp"
+        "src/maths/circle.cpp"
         "src/maths/line.cpp"
         "src/maths/matrix4.cpp"
         "src/maths/mt199937ar.cpp"
@@ -32,6 +33,7 @@ set(SOURCES
         "src/maths/quaternion.cpp"
         "src/maths/random.cpp"
         "src/maths/ray.cpp"
+        "src/maths/uuid.cpp"
         "src/memory/memory.cpp"
         "src/os/os_android.cpp"
         "src/os/os.cpp"
@@ -44,7 +46,6 @@ set(SOURCES
         "src/resources/metadata.cpp"
         "src/resources/resource.cpp"
         "src/resources/resource_data.cpp"
-        "src/runner/main_loop.cpp"
         "src/support/console.cpp"
         "src/support/debug.cpp"
         "src/support/exception.cpp"
@@ -60,41 +61,12 @@ set(SOURCES
         "src/utils/encrypt.cpp"
         "src/utils/hash.cpp"
         "src/utils/variable.cpp"
-        
-        "contrib/json/jsoncpp.cpp"
-
-        "contrib/lodepng/lodepng.cpp"
-
-        "contrib/speex/resample.c"
-
-        "contrib/stb_image/stb_image.c"
-
-        "contrib/tiny-aes/aes.c"
-
-        "contrib/tinyxml/ticpp.cpp"
-        "contrib/tinyxml/tinystr.cpp"
-        "contrib/tinyxml/tinyxml.cpp"
-        "contrib/tinyxml/tinyxmlerror.cpp"
-        "contrib/tinyxml/tinyxmlparser.cpp"
-
-        "contrib/xxhash/xxhash.c"
-
-        "contrib/zlib/adler32.c"
-        "contrib/zlib/compress.c"
-        "contrib/zlib/crc32.c"
-        "contrib/zlib/deflate.c"
-        "contrib/zlib/infback.c"
-        "contrib/zlib/inffast.c"
-        "contrib/zlib/inflate.c"
-        "contrib/zlib/inftrees.c"
-        "contrib/zlib/trees.c"
-        "contrib/zlib/uncompr.c"
-        "contrib/zlib/zutil.c"
         )
 
 set(HEADERS
         "include/halley/audio/resampler.h"
         "include/halley/bytes/byte_serializer.h"
+        "include/halley/bytes/config_node_serializer.h"
         "include/halley/bytes/compression.h"
         "include/halley/bytes/fuzzer.h"
         "include/halley/concurrency/concurrent.h"
@@ -102,7 +74,6 @@ set(HEADERS
         "include/halley/concurrency/future.h"
         "include/halley/concurrency/task.h"
         "include/halley/data_structures/bin_pack.h"
-        "include/halley/data_structures/circular_buffer.h"
         "include/halley/data_structures/dynamic_grid.h"
         "include/halley/data_structures/flat_map.h"
         "include/halley/data_structures/hash_map.h"
@@ -113,6 +84,7 @@ set(HEADERS
         "include/halley/data_structures/memory_pool.h"
         "include/halley/data_structures/nullable_reference.h"
         "include/halley/data_structures/rect_spatial_checker.h"
+        "include/halley/data_structures/ring_buffer.h"
         "include/halley/data_structures/tree_map.h"
         "include/halley/data_structures/vector.h"
         "include/halley/file/directory_monitor.h"
@@ -134,6 +106,7 @@ set(HEADERS
         "include/halley/maths/angle.h"
         "include/halley/maths/base_transform.h"
         "include/halley/maths/box.h"
+        "include/halley/maths/circle.h"
         "include/halley/maths/colour.h"
         "include/halley/maths/colour.natvis"
         "include/halley/maths/line.h"
@@ -142,6 +115,7 @@ set(HEADERS
         "include/halley/maths/quaternion.h"
         "include/halley/maths/random.h"
         "include/halley/maths/ray.h"
+        "include/halley/maths/uuid.h"
         "src/maths/mt199937ar.h"
         "include/halley/maths/range.h"
         "include/halley/maths/rect.h"
@@ -156,9 +130,6 @@ set(HEADERS
         "include/halley/resources/metadata.h"
         "include/halley/resources/resource_data.h"
         "include/halley/resources/resource.h"
-        "include/halley/runner/entry_point.h"
-        "include/halley/runner/game_loader.h"
-        "include/halley/runner/main_loop.h"
         "include/halley/support/assert.h"
         "include/halley/support/console.h"
         "include/halley/support/debug.h"
@@ -186,46 +157,14 @@ set(HEADERS
         "src/os/os_unix.h"
         "src/os/os_win32.h"
         "src/support/StackWalker/StackWalker.h"
-
-        "contrib/json/json-forwards.h"
-        "contrib/json/json.h"
-        
-        "contrib/lodepng/lodepng.h"
-        
-        "contrib/stb_image/stb_image.h"
-        
-        "contrib/tiny-aes/aes.h"
-        "contrib/tiny-aes/aes.hpp"
-        
-        "contrib/tinyxml/ticpp.h"
-        "contrib/tinyxml/ticpprc.h"
-        "contrib/tinyxml/tinystr.h"
-        "contrib/tinyxml/tinyxml.h"
-        
-        "contrib/speex/arch.h"
-        "contrib/speex/fixed_generic.h"
-        "contrib/speex/speex_resampler.h"
-        "contrib/speex/stack_alloc.h"
-        
-        "contrib/xxhash/xxhash.h"
-
-        "contrib/zlib/crc32.h"
-        "contrib/zlib/deflate.h"
-        "contrib/zlib/inffast.h"
-        "contrib/zlib/inffixed.h"
-        "contrib/zlib/inflate.h"
-        "contrib/zlib/inftrees.h"
-        "contrib/zlib/trees.h"
-        "contrib/zlib/zconf.h"
-        "contrib/zlib/zlib.h"
-        "contrib/zlib/zutil.h"
         )
 
 assign_source_group(${SOURCES})
 assign_source_group(${HEADERS})
 
-if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         set_source_files_properties("src/maths/matrix4.cpp" PROPERTIES COMPILE_FLAGS "-msse3")
 endif ()
 
 add_library (halley-utils ${SOURCES} ${HEADERS})
+target_link_libraries (halley-utils halley-contrib)

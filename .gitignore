@@ -61,6 +61,7 @@ obj/
 *.log
 _ReSharper*/
 *.sbr
+.clangd/
 
 # Build system
 /build/
@@ -69,3 +70,4 @@ _ReSharper*/
 # External folder
 /external/
 /gen/
+/shared_gen/

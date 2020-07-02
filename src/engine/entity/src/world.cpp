@@ -9,13 +9,20 @@
 #include "halley/text/string_converter.h"
 #include "halley/support/debug.h"
 #include "halley/file_formats/config_file.h"
+#include "halley/maths/uuid.h"
+#include "halley/core/api/halley_api.h"
+#include "halley/support/logger.h"
 
 using namespace Halley;
 
-World::World(const HalleyAPI* api, bool collectMetrics)
+World::World(const HalleyAPI& api, Resources& resources, bool collectMetrics, CreateComponentFunction createComponent)
 	: api(api)
+	, resources(resources)
+	, createComponent(std::move(createComponent))
 	, collectMetrics(collectMetrics)
-{	
+	, maskStorage(FamilyMask::MaskStorageInterface::createStorage())
+	, componentDeleterTable(std::make_shared<ComponentDeleterTable>())
+{
 }
 
 World::~World()
@@ -39,7 +46,8 @@ World::~World()
 
 System& World::addSystem(std::unique_ptr<System> system, TimeLine timelineType)
 {
-	system->api = api;
+	system->api = &api;
+	system->resources = &resources;
 	system->setCollectSamples(collectMetrics);
 	auto& ref = *system.get();
 	auto& timeline = getSystems(timelineType);
@@ -102,6 +110,9 @@ System& World::getSystem(const String& name)
 Service& World::addService(std::shared_ptr<Service> service)
 {
 	auto& ref = *service;
+	if (services.find(service->getName()) != services.end()) {
+		throw Exception("Service already registered: " + service->getName(), HalleyExceptions::Entity);
+	}
 	services[service->getName()] = std::move(service);
 	return ref;
 }
@@ -129,45 +140,85 @@ void World::loadSystems(const ConfigNode& root, std::function<std::unique_ptr<Sy
 	}
 }
 
-Service& World::getService(const String& name) const
+Service* World::tryGetService(const String& name) const
 {
-	auto iter = services.find(name);
+	const auto iter = services.find(name);
 	if (iter == services.end()) {
-		throw Exception("Service not found: " + name, HalleyExceptions::Entity);
+		return nullptr;
 	}
-	return *iter->second;
+	return iter->second.get();
 }
 
-EntityRef World::createEntity()
+EntityRef World::createEntity(String name, std::optional<EntityRef> parent)
 {
+	return createEntity(UUID(), name, parent);
+}
+
+EntityRef World::createEntity(UUID uuid, String name, std::optional<EntityRef> parent)
+{
+	if (!uuid.isValid()) {
+		uuid = UUID::generate();
+	}
+	
 	Entity* entity = new(PoolAllocator<Entity>::alloc()) Entity();
 	if (entity == nullptr) {
 		throw Exception("Error creating entity - out of memory?", HalleyExceptions::Entity);
 	}
+	entity->uuid = uuid;
+	
 	entitiesPendingCreation.push_back(entity);
 	allocateEntity(entity);
-	return EntityRef(*entity, *this);
+
+	auto e = EntityRef(*entity, *this);
+	e.setName(std::move(name));
+
+	if (parent) {
+		e.setParent(parent.value());
+	}
+	
+	return e;
+}
+
+EntityRef World::createEntity(UUID uuid, String name, EntityId parentId)
+{
+	return createEntity(uuid, name, getEntity(parentId));
 }
 
 void World::destroyEntity(EntityId id)
 {
-	auto e = tryGetEntity(id);
+	doDestroyEntity(id);
+}
+
+void World::destroyEntity(EntityRef entity)
+{
+	Expects(entity.world == this);
+	doDestroyEntity(entity.entity);
+}
+
+void World::doDestroyEntity(EntityId id)
+{
+	const auto e = tryGetRawEntity(id);
 	if (e) {
-		e->destroy();
-		entityDirty = true;
+		doDestroyEntity(e);
 	}
+}
+
+void World::doDestroyEntity(Entity* e)
+{
+	e->destroy();
+	entityDirty = true;
 }
 
 EntityRef World::getEntity(EntityId id)
 {
-	Entity* entity = tryGetEntity(id);
+	Entity* entity = tryGetRawEntity(id);
 	if (entity == nullptr) {
 		throw Exception("Entity does not exist: " + toString(id), HalleyExceptions::Entity);
 	}
 	return EntityRef(*entity, *this);
 }
 
-Entity* World::tryGetEntity(EntityId id)
+Entity* World::tryGetRawEntity(EntityId id)
 {
 	auto v = entityMap.get(id.value);
 	if (v == nullptr) {
@@ -176,9 +227,63 @@ Entity* World::tryGetEntity(EntityId id)
 	return *v;
 }
 
+std::optional<EntityRef> World::findEntity(const UUID& id)
+{
+	for (auto& e: entities) {
+		if (e->getUUID() == id) {
+			return EntityRef(*e, *this);
+		}
+	}
+	return std::optional<EntityRef>();
+}
+
 size_t World::numEntities() const
 {
 	return entities.size();
+}
+
+std::vector<EntityRef> World::getEntities()
+{
+	std::vector<EntityRef> result;
+	result.reserve(entities.size());
+	for (auto& e: entities) {
+		result.emplace_back(*e, *this);
+	}
+	return result;
+}
+
+std::vector<ConstEntityRef> World::getEntities() const
+{
+	std::vector<ConstEntityRef> result;
+	result.reserve(entities.size());
+	for (auto& e : entities) {
+		result.emplace_back(*e, *this);
+	}
+	return result;
+}
+
+std::vector<EntityRef> World::getTopLevelEntities()
+{
+	std::vector<EntityRef> result;
+	result.reserve(entities.size());
+	for (auto& e : entities) {
+		if (e->getParent() == nullptr) {
+			result.emplace_back(*e, *this);
+		}
+	}
+	return result;
+}
+
+std::vector<ConstEntityRef> World::getTopLevelEntities() const
+{
+	std::vector<ConstEntityRef> result;
+	result.reserve(entities.size());
+	for (auto& e : entities) {
+		if (e->getParent() == nullptr) {
+			result.emplace_back(*e, *this);
+		}
+	}
+	return result;
 }
 
 void World::onEntityDirty()
@@ -186,9 +291,25 @@ void World::onEntityDirty()
 	entityDirty = true;
 }
 
+const CreateComponentFunction& World::getCreateComponentFunction() const
+{
+	return createComponent;
+}
+
+MaskStorage& World::getMaskStorage() const
+{
+	return *maskStorage;
+}
+
+ComponentDeleterTable& World::getComponentDeleterTable()
+{
+	return *componentDeleterTable;
+}
+
 void World::deleteEntity(Entity* entity)
 {
 	Expects (entity);
+	entity->destroyComponents(*componentDeleterTable);
 	entity->~Entity();
 	PoolAllocator<Entity>::free(entity);
 }
@@ -268,8 +389,8 @@ void World::updateEntities()
 	std::vector<size_t> entitiesRemoved;
 
 	struct FamilyTodo {
-		std::vector<Entity*> toAdd;
-		std::vector<Entity*> toRemove;
+		std::vector<std::pair<FamilyMaskType, Entity*>> toAdd;
+		std::vector<std::pair<FamilyMaskType, Entity*>> toRemove;
 	};
 	std::map<FamilyMaskType, FamilyTodo> pending;
 
@@ -286,31 +407,42 @@ void World::updateEntities()
 			// First of all, let's check if it's dead
 			if (!entity.isAlive()) {
 				// Remove from systems
-				pending[entity.getMask()].toRemove.push_back(&entity);
+				pending[entity.getMask()].toRemove.emplace_back(FamilyMaskType(), &entity);
 				entitiesRemoved.push_back(i);
 			} else {
 				// It's alive, so check old and new system inclusions
 				FamilyMaskType oldMask = entity.getMask();
-				entity.refresh();
+				entity.refresh(*maskStorage, *componentDeleterTable);
 				FamilyMaskType newMask = entity.getMask();
 
 				// Did it change?
 				if (oldMask != newMask) {
-					pending[oldMask].toRemove.push_back(&entity);
-					pending[newMask].toAdd.push_back(&entity);
+					pending[oldMask].toRemove.emplace_back(newMask, &entity);
+					pending[newMask].toAdd.emplace_back(oldMask, &entity);
 				}
 			}
 		}
 	}
 
 	HALLEY_DEBUG_TRACE();
+	// Go through every family adding/removing entities as needed
 	for (auto& todo: pending) {
 		for (auto& fam: getFamiliesFor(todo.first)) {
+			const auto& famMask = fam->inclusionMask;
+			
 			for (auto& e: todo.second.toRemove) {
-				fam->removeEntity(*e);
+				// Only remove if the entity is not about to be re-added
+				const auto& newMask = e.first;
+				if (!newMask.contains(famMask, *maskStorage)) {
+					fam->removeEntity(*e.second);
+				}
 			}
 			for (auto& e: todo.second.toAdd) {
-				fam->addEntity(*e);
+				// Only add if the entity was not already in this
+				const auto& oldMask = e.first;
+				if (!oldMask.contains(famMask, *maskStorage)) {
+					fam->addEntity(*e.second);
+				}
 			}
 		}
 	}
@@ -355,10 +487,10 @@ void World::initSystems()
 	}
 }
 
-void World::updateSystems(TimeLine timeline, Time time)
+void World::updateSystems(TimeLine timeline, Time elapsed)
 {
 	for (auto& system : getSystems(timeline)) {
-		system->doUpdate(time);
+		system->doUpdate(elapsed);
 		spawnPending();
 	}
 }
@@ -378,7 +510,7 @@ void World::onAddFamily(Family& family)
 		auto& entity = *entities[i];
 		auto eMask = entity.getMask();
 		auto fMask = family.inclusionMask;
-		if ((eMask & fMask) == fMask) {
+		if ((eMask.intersection(fMask, *maskStorage)) == fMask) {
 			family.addEntity(entity);
 		}
 	}
@@ -395,7 +527,7 @@ const std::vector<Family*>& World::getFamiliesFor(const FamilyMaskType& mask)
 		for (auto& iter : families) {
 			auto& family = *iter;
 			FamilyMaskType famMask = family.inclusionMask;
-			if (mask.contains(famMask)) {
+			if (mask.contains(famMask, *maskStorage)) {
 				result.push_back(&family);
 			}
 		}

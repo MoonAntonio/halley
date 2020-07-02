@@ -1,4 +1,3 @@
-#include <boost/variant/detail/substitute.hpp>
 #include "halley/tools/assets/asset_importer.h"
 #include "halley/support/exception.h"
 #include "importers/copy_file_importer.h"
@@ -16,14 +15,15 @@
 #include "importers/shader_importer.h"
 #include "halley/text/string_converter.h"
 #include "halley/tools/project/project.h"
+#include "halley/tools/project/project_properties.h"
 #include "importers/texture_importer.h"
 #include "importers/variable_importer.h"
 #include "importers/mesh_importer.h"
 
 using namespace Halley;
 
-AssetImporter::AssetImporter(Project& project, const std::vector<Path>& assetsSrc)
-	: assetsSrc(assetsSrc)
+AssetImporter::AssetImporter(Project& project, std::vector<Path> assetsSrc)
+	: assetsSrc(std::move(assetsSrc))
 {
 	std::unique_ptr<IAssetImporter> defaultImporters[] = {
 		std::make_unique<CopyFileImporter>(),
@@ -33,6 +33,8 @@ AssetImporter::AssetImporter(Project& project, const std::vector<Path>& assetsSr
 		std::make_unique<AnimationImporter>(),
 		std::make_unique<MaterialImporter>(),
 		std::make_unique<ConfigImporter>(),
+		std::make_unique<PrefabImporter>(),
+		std::make_unique<SceneImporter>(),
 		std::make_unique<CodegenImporter>(),
 		std::make_unique<AudioImporter>(),
 		std::make_unique<AudioEventImporter>(),
@@ -45,17 +47,26 @@ AssetImporter::AssetImporter(Project& project, const std::vector<Path>& assetsSr
 		std::make_unique<VariableImporter>()
 	};
 
+	importByExtension = project.getProperties().getImportByExtension();
+
 	for (auto& importer: defaultImporters) {
 		auto type = importer->getType();
 		auto& importerSet = importers[type];
-		importerSet.emplace_back(std::move(importer));
+		
+		addImporter(importerSet, std::move(importer));
 		for (auto& pluginImporter: project.getAssetImportersFromPlugins(type)) {
-			importerSet.emplace_back(std::move(pluginImporter));
+			addImporter(importerSet, std::move(pluginImporter));
 		}
 	}
 }
 
-IAssetImporter& AssetImporter::getRootImporter(Path path) const
+void AssetImporter::addImporter(std::vector<std::unique_ptr<IAssetImporter>>& dst, std::unique_ptr<IAssetImporter> importer)
+{
+	importer->setImportByExtension(importByExtension);
+	dst.emplace_back(std::move(importer));
+}
+
+IAssetImporter& AssetImporter::getRootImporter(const Path& path) const
 {
 	ImportAssetType type = ImportAssetType::SimpleCopy;
 	
@@ -72,6 +83,10 @@ IAssetImporter& AssetImporter::getRootImporter(Path path) const
 		type = ImportAssetType::Material;
 	} else if (root == "config") {
 		type = ImportAssetType::Config;
+	} else if (root == "prefab") {
+		type = ImportAssetType::Prefab;
+	} else if (root == "scene") {
+		type = ImportAssetType::Scene;
 	} else if (root == "audio") {
 		type = ImportAssetType::Audio;
 	} else if (root == "audio_event") {
@@ -98,7 +113,7 @@ std::vector<std::reference_wrapper<IAssetImporter>> AssetImporter::getImporters(
 	auto i = importers.find(type);
 	if (i != importers.end()) {
 		for (auto& importer: i->second) {
-			result.push_back(*importer);
+			result.emplace_back(*importer);
 		}
 		return result;
 	}

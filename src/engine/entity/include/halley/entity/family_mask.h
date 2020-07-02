@@ -3,7 +3,11 @@
 #include <bitset>
 #include "halley/data_structures/maybe_ref.h"
 
+class MaskStorage;
+
 namespace Halley {
+	class HalleyStatics;
+
 	namespace FamilyMask {
 		using RealType = std::bitset<256>;
 
@@ -14,19 +18,18 @@ namespace Halley {
 			Handle();
 			Handle(const Handle& h);
 			Handle(Handle&& h) noexcept;
-			Handle(const RealType& mask);
-			Handle(RealType&& mask);
+			Handle(const RealType& mask, MaskStorage& storage);
 
-			void operator=(const Handle& h);
+			Handle& operator=(const Handle& h);
 
 			bool operator==(const Handle& h) const;
 			bool operator!=(const Handle& h) const;
 			bool operator<(const Handle& h) const;
-			Handle operator&(const Handle& h) const;
 
-			const RealType& getRealValue() const;
+			const RealType& getRealValue(MaskStorage& storage) const;
 			
-			bool contains(const Handle& handle) const;
+			Handle intersection(const Handle& h, MaskStorage& storage) const;
+			bool contains(const Handle& handle, MaskStorage& storage) const;
 
 		private:
 			int value = -1;
@@ -39,13 +42,13 @@ namespace Halley {
 			mask[bit] = true;
 		}
 
-		inline bool hasBit(HandleType handle, int bit) {
-			return handle.getRealValue()[bit];
+		inline bool hasBit(HandleType handle, int bit, MaskStorage& storage) {
+			return handle.getRealValue(storage)[bit];
 		}
 
 
 
-		HandleType getHandle(RealType mask);
+		HandleType getHandle(RealType mask, MaskStorage& storage);
 
 
 		template <typename T>
@@ -78,10 +81,10 @@ namespace Halley {
 				Evaluator<Ts...>::makeMask(mask);
 			}
 
-			static HandleType getMask() {
+			static HandleType getMask(MaskStorage& storage) {
 				RealType mask;
 				makeMask(mask);
-				return getHandle(mask);
+				return getHandle(mask, storage);
 			}
 		};
 
@@ -106,10 +109,10 @@ namespace Halley {
 				Evaluator<Ts...>::makeMask(mask);
 			}
 
-			static HandleType getMask() {
+			static HandleType getMask(MaskStorage& storage) {
 				RealType mask;
 				makeMask(mask);
-				return getHandle(mask);
+				return getHandle(mask, storage);
 			}
 		};
 
@@ -140,20 +143,18 @@ namespace Halley {
 				InclusionEvaluator<Ts...>::makeMask(mask);
 			}
 
-			static HandleType getMask() {
+			static HandleType getMask(MaskStorage& storage) {
 				RealType mask;
 				makeMask(mask);
-				return getHandle(mask);
+				return getHandle(mask, storage);
 			}
 		};
-	}
 
-	class MaskStorageInterface
-	{
-	public:
-		static void* createMaskStorage();
-		static void setMaskStorage(void*);
-	};
+		class MaskStorageInterface {
+		public:
+			static std::shared_ptr<MaskStorage> createStorage();
+		};
+	}
 
 	using FamilyMaskType = FamilyMask::HandleType;
 }

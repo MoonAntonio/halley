@@ -101,6 +101,7 @@ namespace Halley {
 		void add(std::shared_ptr<IUIElement> element, float proportion = 0, Vector4f border = Vector4f(), int fillFlags = UISizerFillFlags::Fill) override;
 		void addSpacer(float size) override;
 		void addStretchSpacer(float proportion = 0) override;
+		void remove(IUIElement& element);
 
 		void reparent(UIParent& parent);
 
@@ -117,7 +118,14 @@ namespace Halley {
 		UISizerEntry& operator[](size_t n);
 
 		void updateEnabled() const;
+		
 		void swapItems(int idxA, int idxB);
+
+		template <typename F>
+		void sortItems(F f)
+		{
+			std::sort(entries.begin(), entries.end(), f);
+		}
 
 	private:
 		std::vector<UISizerEntry> entries;

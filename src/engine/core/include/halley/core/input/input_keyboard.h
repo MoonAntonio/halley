@@ -46,9 +46,9 @@ namespace Halley {
 		void setSelection(int selection);
 		void setSelection(Range<int> selection);
 
-		void setLengthLimits(int min, Maybe<int> max);
+		void setLengthLimits(int min, std::optional<int> max);
 		int getMinLength() const;
-		Maybe<int> getMaxLength() const;
+		std::optional<int> getMaxLength() const;
 
 		void insertText(const String& text);
 		void insertText(const StringUTF32& text);
@@ -58,13 +58,17 @@ namespace Halley {
 		int getTextRevision() const;
 		Range<int> getTotalRange() const;
 
+		void setReadOnly(bool enable);
+		bool isReadOnly() const;
+
 	private:
 		StringUTF32 text;
 		Range<int> selection;
 
 		int minLength = 0;
-		Maybe<int> maxLength = {};
+		std::optional<int> maxLength = {};
 		int textRevision = 0;
+		bool readOnly = false;
 
 		void onTextModified();
 		void onDelete();

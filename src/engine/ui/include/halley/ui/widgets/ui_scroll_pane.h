@@ -39,24 +39,32 @@ namespace Halley {
 		bool canScroll(UIScrollDirection direction) const;
 		float getCoverageSize(UIScrollDirection direction) const;
 
-		void refresh();
+		void setScrollWheelEnabled(bool enabled);
+		bool isScrollWheelEnabled() const;
 
-		Maybe<float> getMaxChildWidth() const override;
+		void refresh(bool force = false);
+
+		std::optional<float> getMaxChildWidth() const override;
 		bool ignoreClip() const override;
 
+		void onChildrenAdded() override;
+		void onChildrenRemoved() override;
+    	
     protected:
 	    void drawChildren(UIPainter& painter) const override;
 	    Vector2f getLayoutMinimumSize(bool force) const override;
 	    Vector2f getLayoutOriginPosition() const override;
 	    bool canInteractWithMouse() const override;
+		void onLayout() override;
 
    	private:
 		Vector2f clipSize;
 		Vector2f contentsSize;
 		Vector2f scrollPos;
-		float scrollSpeed;
-		bool scrollHorizontal;
-		bool scrollVertical;
+		float scrollSpeed = 0;
+		bool scrollHorizontal = false;
+		bool scrollVertical = false;
+		bool scrollWheelEnabled = true;
 
 		void onMouseWheel(const UIEvent& event);
 		Vector2f getBasePosition(const String& widgetId);

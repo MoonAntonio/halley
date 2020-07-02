@@ -89,7 +89,7 @@ Core::~Core()
 	deInit();
 }
 
-const HalleyStatics& Core::getStatics()
+HalleyStatics& Core::getStatics()
 {
 	return statics;
 }
@@ -100,8 +100,17 @@ void Core::onSuspended()
 	if (api->videoInternal) {
 		api->videoInternal->onSuspend();
 	}
+	if (api->audioInternal) {
+		api->audioInternal->onSuspend();
+	}
+	if (api->audioOutputInternal) {
+		api->audioOutputInternal->onSuspend();
+	}
 	if (api->inputInternal) {
 		api->inputInternal->onSuspend();
+	}
+	if (api->systemInternal) {
+		api->systemInternal->onSuspend();
 	}
 
 	statics.suspend();
@@ -121,9 +130,18 @@ void Core::onReloaded()
 	if (api->system) {
 		api->system->setThreadName("main");
 	}
-	
+
+	if (api->systemInternal) {
+		api->systemInternal->onResume();
+	}
 	if (api->inputInternal) {
 		api->inputInternal->onResume();
+	}
+	if (api->audioOutputInternal) {
+		api->audioOutputInternal->onResume();
+	}
+	if (api->audioInternal) {
+		api->audioInternal->onResume();
 	}
 	if (api->videoInternal) {
 		api->videoInternal->onResume();
@@ -154,6 +172,8 @@ int Core::getTargetFPS()
 
 void Core::init()
 {
+	Expects(!initialized);
+	
 	// Initialize API
 	api->init();
 	api->systemInternal->setEnvironment(environment.get());
@@ -165,24 +185,31 @@ void Core::init()
 	// Resources
 	initResources();
 
+	// Give game api and resources
+	game->api = api.get();
+	game->resources = resources.get();
+
 	// Create devcon connection
 	String devConAddress = game->getDevConAddress();
 	if (!devConAddress.isEmpty()) {
-		devConClient = std::make_unique<DevConClient>(*api, api->network->createService(NetworkProtocol::TCP), devConAddress, game->getDevConPort());
+		devConClient = std::make_unique<DevConClient>(*api, *resources, api->network->createService(NetworkProtocol::TCP), std::move(devConAddress), game->getDevConPort());
 	}
 
 	// Start game
-	setStage(game->startGame(&*api));
+	setStage(game->startGame());
 	
 	// Get video resources
 	if (api->video) {
-		painter = api->videoInternal->makePainter(api->core->getResources());
+		painter = api->videoInternal->makePainter(*resources);
 	}
+
+	initialized = true;
 }
 
 void Core::deInit()
 {
 	std::cout << "Game shutting down." << std::endl;
+	Expects(initialized);
 
 	// Ensure stage is cleaned up
 	running = false;
@@ -209,10 +236,13 @@ void Core::deInit()
 	resources.reset();
 
 	// Deinit API (note that this has to happen after resources, otherwise resources which rely on an API to de-init, such as textures, will crash)
+	api->deInit();
 	api.reset();
 	
 	// Stop thread pool and other statics
 	statics.suspend();
+	
+	initialized = false;
 
 	// Deinit console redirector
 	std::cout << "Goodbye!" << std::endl;
@@ -436,13 +466,13 @@ void Core::quit(int code)
 
 Resources& Core::getResources()
 {
-	Expects(resources);
+	Expects(resources != nullptr);
 	return *resources;
 }
 
 const Environment& Core::getEnvironment()
 {
-	Expects(environment);
+	Expects(environment != nullptr);
 	return *environment;
 }
 
@@ -462,9 +492,8 @@ int64_t Core::getTime(CoreAPITimer timerType, TimeLine tl, StopwatchAveraging::M
 
 void Core::initStage(Stage& stage)
 {
-	stage.api = &*api;
 	stage.setGame(*game);
-	stage.init();
+	stage.doInit(api.get(), *resources);
 }
 
 Stage& Core::getCurrentStage()

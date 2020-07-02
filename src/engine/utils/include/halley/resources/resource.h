@@ -28,7 +28,9 @@ namespace Halley
 		SpriteSheet,
 		Shader,
 		Mesh,
-		VariableTable
+		VariableTable,
+		Prefab,
+		Scene
 	};
 
 	// This order matters.
@@ -51,12 +53,14 @@ namespace Halley
 		AudioEvent,
 		Mesh,
 		MeshAnimation,
-		VariableTable
+		VariableTable,
+		Prefab,
+		Scene
 	};
 
 	template <>
 	struct EnumNames<AssetType> {
-		constexpr std::array<const char*, 16> operator()() const {
+		constexpr std::array<const char*, 18> operator()() const {
 			return{{
 				"binaryFile",
 				"textFile",
@@ -73,7 +77,9 @@ namespace Halley
 				"audioEvent",
 				"mesh",
 				"meshAnimation",
-				"variableTable"
+				"variableTable",
+				"prefab",
+				"scene"
 			}};
 		}
 	};
@@ -86,9 +92,11 @@ namespace Halley
 	public:
 		virtual ~Resource();
 
-		void setMeta(const Metadata& meta);
+		void setMeta(Metadata meta);
 		const Metadata& getMeta() const;
-		void setAssetId(const String& name);
+		bool isMetaSet() const;
+		
+		void setAssetId(String name);
 		const String& getAssetId() const;
 		virtual void onLoaded(Resources& resources);
 		
@@ -102,6 +110,7 @@ namespace Halley
 		Metadata meta;
 		String assetId;
 		int assetVersion = 0;
+		bool metaSet = false;
 	};
 
 	class ResourceObserver

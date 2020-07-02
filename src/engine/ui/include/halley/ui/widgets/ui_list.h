@@ -15,7 +15,7 @@ namespace Halley {
 		friend class UIListItem;
 
 	public:
-		explicit UIList(const String& id, UIStyle style, UISizerType orientation = UISizerType::Vertical, int nColumns = 1);
+		explicit UIList(String id, UIStyle style, UISizerType orientation = UISizerType::Vertical, int nColumns = 1);
 
 		bool setSelectedOption(int option);
 		bool setSelectedOptionId(const String& id);
@@ -26,13 +26,14 @@ namespace Halley {
 		UIStyle getStyle() const;
 
 		void addTextItem(const String& id, const LocalisedString& label, float maxWidth = -1, bool centre = false);
-		void addImage(const String& id, std::shared_ptr<UIImage> element, float proportion = 0, Vector4f border = {}, int fillFlags = UISizerFillFlags::Fill, Maybe<UIStyle> styleOverride = {});
-		void addItem(const String& id, std::shared_ptr<IUIElement> element, float proportion = 0, Vector4f border = {}, int fillFlags = UISizerFillFlags::Fill, Maybe<UIStyle> styleOverride = {});
+		void addImage(const String& id, std::shared_ptr<UIImage> element, float proportion = 0, Vector4f border = {}, int fillFlags = UISizerFillFlags::Fill, std::optional<UIStyle> styleOverride = {});
+		void addItem(const String& id, std::shared_ptr<IUIElement> element, float proportion = 0, Vector4f border = {}, int fillFlags = UISizerFillFlags::Fill, std::optional<UIStyle> styleOverride = {});
 
 		void clear() override;
 
 		void setItemEnabled(const String& id, bool enabled);
 		void setItemActive(const String& id, bool active);
+		void filterOptions(const String& filter);
 
 		Rect4f getOptionRect(int curOption) const;
 
@@ -43,9 +44,13 @@ namespace Halley {
 
 		std::shared_ptr<UIListItem> getItem(int n) const;
 		std::shared_ptr<UIListItem> getItem(const String& id) const;
+		std::shared_ptr<UIListItem> tryGetItem(const String& id) const;
 
-		bool canDrag() const;
-		void setDrag(bool drag);
+		bool isDragEnabled() const;
+		void setDragEnabled(bool drag);
+		bool isDragOutsideEnabled() const;
+		void setDragOutsideEnabled(bool dragOutside);
+		virtual bool canDragListItem(const UIListItem& listItem);
 
 		bool isSingleClickAccept() const;
 		void setSingleClickAccept(bool enabled);
@@ -54,35 +59,40 @@ namespace Halley {
 
 		bool ignoreClip() const override;
 
+		bool canReceiveFocus() const override;
 
 	protected:
 		void draw(UIPainter& painter) const override;
 		void update(Time t, bool moved) override;
 		void onInput(const UIInputResults& input, Time time) override;
 
-	private:
+		void addItem(std::shared_ptr<UIListItem> item, Vector4f border = Vector4f(), int fillFlags = UISizerFillFlags::Fill);
+		size_t getNumberOfItems() const;
+
+		virtual void onItemDragging(UIListItem& item, int index, Vector2f pos);
+		virtual void onItemDoneDragging(UIListItem& item, int index, Vector2f pos);
+		void reassignIds();
+
 		UIStyle style;
+		std::vector<std::shared_ptr<UIListItem>> items;
+		int curOption = -1;
+
+	private:
 		UISizerType orientation;
 		Sprite sprite;
-		std::vector<std::shared_ptr<UIListItem>> items;
 
-		int curOptionHighlight = -1;
-		int curOption = -1;
 		int nColumns = 1;
 		bool firstUpdate = true;
 		bool dragEnabled = false;
+		bool dragOutsideEnabled = false;
 		bool manualDragging = false;
 		bool uniformSizedItems = false;
 		bool singleClickAccept = true;
 
 		void onItemClicked(UIListItem& item);
 		void onItemDoubleClicked(UIListItem& item);
-		void onItemDragged(UIListItem& item, int index, Vector2f pos);
-		void addItem(std::shared_ptr<UIListItem> item);
 		void onAccept();
 		void onCancel();
-		void reassignIds();
-		size_t getNumberOfItems() const;
 
 		void swapItems(int idxA, int idxB);
 		bool isManualDragging() const;
@@ -100,12 +110,22 @@ namespace Halley {
 
 		int getIndex() const;
 		void setIndex(int index);
+
+		int getAbsoluteIndex() const;
+		void setAbsoluteIndex(int index);
+		
 		Rect4f getMouseRect() const override;
 		Rect4f getRawRect() const;
+		
+		void setClickableInnerBorder(Vector4f innerBorder);
+		Vector4f getClickableInnerBorder() const;
+		
 		void notifySwap(Vector2f to);
 		bool canSwap() const;
 		Vector2f getOrigPosition() const;
 
+		void setDraggableSubWidget(UIWidget* widget);
+		
 	protected:
 		void draw(UIPainter& painter) const override;
 		void update(Time t, bool moved) override;
@@ -120,8 +140,10 @@ namespace Halley {
 		UIList& parent;
 		UIStyle style;
 		int index;
+		int absoluteIndex;
 		Sprite sprite;
 		Vector4f extraMouseArea;
+		Vector4f innerBorder;
 		bool selected = false;
 
 		bool held = false;
@@ -130,6 +152,8 @@ namespace Halley {
 		Vector2f myStartPos;
 		Vector2f origPos;
 		Vector2f curDragPos;
+		Vector2f dragWidgetOffset;
+		UIWidget* dragWidget = nullptr;
 
 		bool swapping = false;
 		Vector2f swapFrom;

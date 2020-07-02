@@ -3,7 +3,7 @@
 #include "executor.h"
 #include <memory>
 #include <atomic>
-#include <boost/optional.hpp>
+#include <halley/data_structures/maybe.h>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -93,7 +93,7 @@ namespace Halley
 		T get()
 		{
 			wait();
-			return doGet<T>(0);
+			return doGet<T>();
 		}
 
 		void wait()
@@ -138,27 +138,23 @@ namespace Halley
 
 	private:
 		void apply(std::function<void(T)> f) {
-			f(doGet<T>(0));
+			f(doGet<T>());
 		}
 
 		template<typename T0>
-		T0 doGet(typename std::enable_if<std::is_copy_constructible<T0>::value, int>::type)
+		T0 doGet()
 		{
-			if (!data.is_initialized()) {
+			if (!data) {
 				throw Exception("Data is not initialized.", HalleyExceptions::Utils);
 			}
-			return data.get();
-		}
 
-		template<typename T0>
-		T0 doGet(typename std::enable_if<!std::is_copy_constructible<T0>::value, int>::type)
-		{
-			if (!data.is_initialized()) {
-				throw Exception("Data is not initialized.", HalleyExceptions::Utils);
+			if constexpr (std::is_copy_constructible<T0>::value) {
+				return *data;
+			} else {
+				auto result = std::move(*data);
+				data.reset();
+				return result;
 			}
-			auto result = std::move(data.get());
-			data.reset();
-			return result;
 		}
 
 		void makeAvailable()
@@ -173,14 +169,14 @@ namespace Halley
 				condition.notify_all();
 			}
 
-			for (auto f : toRun) {
+			for (auto& f : toRun) {
 				apply(f);
 			}
 		}
 
 		std::atomic<bool> available;
 		std::atomic<bool> cancelled;
-		boost::optional<T> data;
+		std::optional<T> data;
 
 		std::vector<std::function<void(T)>> continuations;
 		std::mutex mutex;
@@ -197,7 +193,7 @@ namespace Halley
 		{}
 
 		Future(std::shared_ptr<FutureData<DataType>> data)
-			: data(data)
+			: data(std::move(data))
 		{}
 
 		Future(const Future& o) = default;
@@ -275,7 +271,7 @@ namespace Halley
 
 		void setValue(T value)
 		{
-			Expects(futureData);
+			Expects(futureData != nullptr);
 			futureData->set(std::move(value));
 		}
 
@@ -286,7 +282,7 @@ namespace Halley
 
 		bool isCancelled() const
 		{
-			Expects(futureData);
+			Expects(futureData != nullptr);
 			return futureData->isCancelled();
 		}
 

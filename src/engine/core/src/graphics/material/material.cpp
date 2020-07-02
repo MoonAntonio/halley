@@ -51,7 +51,7 @@ MaterialDataBlock::MaterialDataBlock(MaterialDataBlock&& other) noexcept
 
 MaterialConstantBuffer& MaterialDataBlock::getConstantBuffer() const
 {
-	Expects(constantBuffer);
+	Expects(constantBuffer != nullptr);
 	return *constantBuffer;
 }
 
@@ -119,8 +119,8 @@ Material::Material(const Material& other)
 	}
 }
 
-Material::Material(std::shared_ptr<const MaterialDefinition> materialDefinition, bool forceLocalBlocks)
-	: materialDefinition(materialDefinition)
+Material::Material(std::shared_ptr<const MaterialDefinition> definition, bool forceLocalBlocks)
+	: materialDefinition(std::move(definition))
 {
 	passEnabled.resize(materialDefinition->getNumPasses(), 1);
 	initUniforms(forceLocalBlocks);
@@ -146,9 +146,15 @@ void Material::initUniforms(bool forceLocalBlocks)
 		++blockNumber;
 	}
 
-	textures.resize(materialDefinition->getTextures().size());
-	for (auto& tex: materialDefinition->getTextures()) {
-		textureUniforms.push_back(MaterialTextureParameter(*this, tex));
+	// Load textures
+	const auto& textureDefs = materialDefinition->getTextures();
+	const size_t nTextures = textureDefs.size();
+	textures.reserve(nTextures);
+	textureUniforms.reserve(nTextures);
+	for (size_t i = 0; i < nTextures; ++i) {
+		const auto& tex = textureDefs[i];
+		textureUniforms.push_back(MaterialTextureParameter(*this, tex.name));
+		textures.push_back(tex.defaultTexture);
 	}
 }
 
@@ -237,6 +243,11 @@ const std::vector<std::shared_ptr<const Texture>>& Material::getTextures() const
 	return textures;
 }
 
+size_t Material::getNumTextureUnits() const
+{
+	return textures.size();
+}
+
 void Material::setUniform(int blockNumber, size_t offset, ShaderParameterType type, const void* data)
 {
 	if (dataBlocks[blockNumber].setUniform(offset, type, data)) {
@@ -262,9 +273,18 @@ uint64_t Material::computeHash() const
 	return hasher.digest();
 }
 
+const std::shared_ptr<const Texture>& Material::getFallbackTexture() const
+{
+	return materialDefinition->getFallbackTexture();
+}
+
 const std::shared_ptr<const Texture>& Material::getTexture(int textureUnit) const
 {
-	return textures[textureUnit];
+	auto& tex = textureUnit >= 0 && textureUnit < int(textures.size()) ? textures[textureUnit] : getFallbackTexture();
+	if (!tex) {
+		return getFallbackTexture();
+	}
+	return tex;
 }
 
 const Vector<MaterialParameter>& Material::getUniforms() const
@@ -301,7 +321,7 @@ Material& Material::set(const String& name, const std::shared_ptr<const Texture>
 {
 	auto& texs = materialDefinition->getTextures();
 	for (size_t i = 0; i < texs.size(); ++i) {
-		if (texs[i] == name) {
+		if (texs[i].name == name) {
 			const auto textureUnit = i;
 			if (textures[textureUnit] != texture) {
 				textures[textureUnit] = texture;

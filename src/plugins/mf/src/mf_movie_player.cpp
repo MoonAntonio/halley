@@ -163,7 +163,6 @@ void MFMoviePlayer::init()
 						auto videoSize = Vector2i(int(frameSize >> 32), int(frameSize & 0xFFFFFFFFull));
 						UINT64 aspectRatioRaw;
 						nativeType->GetUINT64(MF_MT_PIXEL_ASPECT_RATIO, &aspectRatioRaw);
-						float par = float(aspectRatioRaw >> 32) / float(aspectRatioRaw & 0xFFFFFFFFull);
 
 						Logger::logInfo("Video stream found with majorType " + guidToString(majorType) + ", frameSize " + toString(videoSize) );
 
@@ -381,7 +380,7 @@ void MFMoviePlayer::readVideoSample(Time time, const gsl::byte* data, int stride
 	memcpy(myData.data(), data, myData.size());
 
 	TextureDescriptor descriptor;
-	descriptor.format = TextureFormat::Indexed;
+	descriptor.format = TextureFormat::Red;
 	descriptor.pixelFormat = PixelDataFormat::Image;
 	descriptor.size = Vector2i(width, height);
 	descriptor.pixelData = TextureDescriptorImageData(std::move(myData), stride);

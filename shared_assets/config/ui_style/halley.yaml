@@ -5,6 +5,7 @@ uiStyle:
     normal: { img: halley_ui/ui_button.png, colour: "#9C5BB5" }
     down: { img: halley_ui/ui_button.png, colour: "#913DA3" }
     hover: { img: halley_ui/ui_button.png, colour: "#B68FCB" }
+    disabled: { img: halley_ui/ui_button.png, colour: "#927B95" }
     innerBorder: [ 5, 5, 5, 5 ]
     upSound: ""
     downSound: ""
@@ -12,26 +13,91 @@ uiStyle:
     label: { font: Ubuntu Bold, size: 15, colour: "#FFFFFF" }
     labelBorder: [0, 0, 0, 0]
 
+  checkbox:
+    normal: { img: halley_ui/ui_checkbox.png, colour: "#9C5BB5" }
+    checked: { img: halley_ui/ui_checkbox_checked.png, colour: "#9C5BB5" }
+    hover: { img: halley_ui/ui_checkbox.png, colour: "#B68FCB" }
+    checkedHover: { img: halley_ui/ui_checkbox_checked.png, colour: "#B68FCB" }
+    disabled: { img: halley_ui/ui_checkbox.png, colour: "#CDCDCD" }
+    checkedDisabled: { img: halley_ui/ui_checkbox_checked.png, colour: "#CDCDCD" }
+
   input:
     box: { img: halley_ui/ui_input.png, colour: "#9861B6" }
     caret: halley_ui/ui_caret.png
     innerBorder: [ 6, 5, 6, 2 ]
-    label: { font: Ubuntu Bold, size: 15, colour: "#FFFFFF" }
-    labelGhost: { font: Ubuntu Bold, size: 15, colour: "#7F7F7F" }
+    label: { font: Ubuntu Regular, size: 15, colour: "#FFFFFF" }
+    labelGhost: { font: Ubuntu Regular, size: 15, colour: "#7F7F7F" }
+    minSize: 30
 
   list:
-    background: ""
+    background: { img: "halley_ui/ui_list_item.png", colour: "#201427" }
     item:
-      normal: { img: halley_ui/ui_list_item.png, colour: "#913DA3" }
-      hover: { img: halley_ui/ui_list_item.png, colour: "#9C5BB5" }
-      selected: { img: halley_ui/ui_list_item.png, colour: "#B68FCB" }
+      normal: ""
+      hover: { img: halley_ui/ui_list_item.png, colour: "#5E3962" }
+      selected: { img: halley_ui/ui_list_item.png, colour: "#9C5BB5" }
+      drag: { img: halley_ui/ui_list_item.png, colour: "#9C5BB580" }
       innerBorder: [ 6, 5, 6, 2 ]
     innerBorder: [ 0, 0, 0, 0 ]
     extraMouseBorder: [ 1, 1, 1, 1 ]
     selectionChangedSound: ""
-    label: { font: Ubuntu Bold, size: 15, colour: "#FFFFFFCF" }
-    selectedLabel: { font: Ubuntu Bold, size: 15, colour: "#FFFFFF" }
+    label: { font: Ubuntu Regular, size: 15, colour: "#FFFFFFCF" }
+    selectedLabel: { font: Ubuntu Regular, size: 15, colour: "#FFFFFF" }
     gap: 1
+
+  treeList:
+    background: { img: "halley_ui/ui_list_item.png", colour: "#201427" }
+    item:
+      normal: ""
+      hover: { img: halley_ui/ui_list_item.png, colour: "#5E3962" }
+      selected: { img: halley_ui/ui_list_item.png, colour: "#9C5BB5" }
+      drag: { img: halley_ui/ui_list_item.png, colour: "#9C5BB580" }
+      innerBorder: [ 0, 0, 0, 0 ]
+    innerBorder: [ 0, 0, 0, 0 ]
+    labelBorder: [ 6, 5, 6, 2 ]
+    extraMouseBorder: [ 1, 1, 1, 1 ]
+    selectionChangedSound: ""
+    label:
+      normal: { font: Ubuntu Regular, size: 13, colour: "#EEEEEE" }
+      selected: { font: Ubuntu Regular, size: 13, colour: "#FFFFFF" }
+      disabled: { font: Ubuntu Regular, size: 13, colour: "#808080" }
+    labelSpecial:
+      normal: { font: Ubuntu Regular, size: 13, colour: "#E8B900" }
+      selected: { font: Ubuntu Regular, size: 13, colour: "#FFCD06" }
+      disabled: { font: Ubuntu Regular, size: 13, colour: "#B7A351" }
+    gap: 1
+    indentation: 20
+    cursor:
+      beforeAfter: { img: "whitebox.png" }
+      over: { img: "whitebox.png", colour: "#FFFFFF80" }
+    controls:
+      guide_i: { img: "halley_ui/ui_treeview_line_i.png", colour: "#9C5BB5" }
+      guide_t: { img: "halley_ui/ui_treeview_line_t.png", colour: "#9C5BB5" }
+      guide_l: { img: "halley_ui/ui_treeview_line_l.png", colour: "#9C5BB5" }
+      guide_empty: { img: "halley_ui/ui_treeview_line_i.png", colour: "#00000000" }
+      leaf: { img: "halley_ui/ui_treeview_leaf.png", colour: "#9C5BB5" }
+      element: { img: "halley_ui/ui_treeview_element.png", colour: "#FFFFFF" }
+      collapseButton:
+        normal: { img: halley_ui/ui_treeview_expanded.png, colour: "#9C5BB5" }
+        down: { img: halley_ui/ui_treeview_expanded.png, colour: "#913DA3" }
+        hover: { img: halley_ui/ui_treeview_expanded.png, colour: "#B68FCB" }
+        disabled: { img: halley_ui/ui_treeview_expanded.png, colour: "#927B95" }
+        innerBorder: [ 0, 0, 0, 0 ]
+        upSound: ""
+        downSound: ""
+        hoverSound: ""
+        label: { font: Ubuntu Regular, size: 13, colour: "#FFFFFF" }
+        labelBorder: [0, 0, 0, 0]
+      expandButton:
+        normal: { img: halley_ui/ui_treeview_collapsed.png, colour: "#9C5BB5" }
+        down: { img: halley_ui/ui_treeview_collapsed.png, colour: "#913DA3" }
+        hover: { img: halley_ui/ui_treeview_collapsed.png, colour: "#B68FCB" }
+        disabled: { img: halley_ui/ui_treeview_collapsed.png, colour: "#927B95" }
+        innerBorder: [ 0, 0, 0, 0 ]
+        upSound: ""
+        downSound: ""
+        hoverSound: ""
+        label: { font: Ubuntu Regular, size: 13, colour: "#FFFFFF" }
+        labelBorder: [0, 0, 0, 0]
 
   dropdown:
     normal: { img: halley_ui/ui_dropdown_closed.png, colour: "#9C5BB5" }
@@ -41,11 +107,12 @@ uiStyle:
     background: { img: halley_ui/ui_dropdown_window.png, colour: "#B68FCB" }
     innerBorder: [ 2, 2, 2, 2 ]
     labelBorder: [ 6, 8, 0, 0 ]
-    label: { font: Ubuntu Bold, size: 15, colour: "#FFFFFF" }
-    selectedLabel: { font: Ubuntu Bold, size: 15, colour: "#FFFFFF" }
+    label: { font: Ubuntu Regular, size: 15, colour: "#FFFFFF" }
+    selectedLabel: { font: Ubuntu Regular, size: 15, colour: "#FFFFFF" }
     openSound: ""
     closeSound: ""
     height: 200
+    minSize: 30
     minSizeMargins: [ 40, 20, 0, 0 ]
 
   scrollbar:

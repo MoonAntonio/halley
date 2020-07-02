@@ -16,7 +16,7 @@
 
 using namespace Halley;
 
-SystemSDL::SystemSDL(Maybe<String> saveCryptKey)
+SystemSDL::SystemSDL(std::optional<String> saveCryptKey)
 	: saveCryptKey(std::move(saveCryptKey))
 {
 }
@@ -55,6 +55,24 @@ void SystemSDL::deInit()
 {
 	// Close SDL
 	SDL_Quit();
+}
+
+void SystemSDL::onResume()
+{
+	if (SDL_InitSubSystem(SDL_INIT_EVENTS) == -1) {
+		throw Exception(String("Exception initializing events: ") + SDL_GetError(), HalleyExceptions::SystemPlugin);
+	}
+	if (SDL_InitSubSystem(SDL_INIT_TIMER) == -1) {
+		throw Exception(String("Exception initializing timer: ") + SDL_GetError(), HalleyExceptions::SystemPlugin);
+	}
+	if (SDL_InitSubSystem(SDL_INIT_JOYSTICK) == -1) {
+		throw Exception(String("Exception initializing joystick: ") + SDL_GetError(), HalleyExceptions::SystemPlugin);
+	}
+}
+
+void SystemSDL::onSuspend()
+{
+	SDL_QuitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_TIMER | SDL_INIT_EVENTS);
 }
 
 Path SystemSDL::getAssetsPath(const Path& gamePath) const
@@ -199,7 +217,7 @@ std::shared_ptr<Window> SystemSDL::createWindow(const WindowDefinition& windowDe
 
 	// Window position
 	Vector2i windowSize = windowDef.getSize();
-	Vector2i winPos = windowDef.getPosition().get_value_or(getCenteredWindow(windowSize, 0));
+	Vector2i winPos = windowDef.getPosition().value_or(getCenteredWindow(windowSize, 0));
 
 	// Create window
 	auto sdlWindow = SDL_CreateWindow(windowDef.getTitle().c_str(), winPos.x, winPos.y, windowSize.x, windowSize.y, flags);

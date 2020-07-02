@@ -1,6 +1,8 @@
-cmake_minimum_required (VERSION 3.0)
+cmake_minimum_required (VERSION 3.10)
 
 project (halley-editor)
+
+SET(HALLEY_MONOLITHIC 1)
 
 set (editor_sources
 	"prec.cpp"
@@ -11,13 +13,33 @@ set (editor_sources
 
 	"src/assets/animation_editor.cpp"
 	"src/assets/assets_editor_window.cpp"
+	"src/assets/metadata_editor.cpp"
+	"src/assets/prefab_editor.cpp"
+
+	"src/project/core_api_wrapper.cpp"
+
+	"src/scene/choose_asset_window.cpp"
+	"src/scene/entity_editor.cpp"
+	"src/scene/entity_editor_factories.cpp"
+	"src/scene/entity_list.cpp"
+	"src/scene/scene_editor_canvas.cpp"
+	"src/scene/scene_editor_gizmo.cpp"
+	"src/scene/scene_editor_gizmo_collection.cpp"
+	"src/scene/scene_editor_window.cpp"
+
+	"src/scene/gizmos/polygon_gizmo.cpp"
+	"src/scene/gizmos/selected_bounds_gizmo.cpp"
+	"src/scene/gizmos/translate_gizmo.cpp"
 
 	"src/ui/console_window.cpp"
 	"src/ui/editor_ui_factory.cpp"
 	"src/ui/load_project_window.cpp"
 	"src/ui/scroll_background.cpp"
+	"src/ui/select_asset_widget.cpp"
 	"src/ui/taskbar.cpp"
 	"src/ui/toolbar.cpp"
+
+	"../../../gen/cpp/registry.cpp"
 	)
 
 set (editor_headers
@@ -28,16 +50,33 @@ set (editor_headers
 
 	"src/assets/animation_editor.h"
 	"src/assets/assets_editor_window.h"
+	"src/assets/metadata_editor.h"
+	"src/assets/prefab_editor.h"
 
+	"src/project/core_api_wrapper.h"
+
+	"src/scene/choose_asset_window.h"
+	"src/scene/entity_editor.h"
+	"src/scene/entity_editor_factories.h"
+	"src/scene/entity_list.h"
+	"src/scene/scene_editor_canvas.h"
+	"src/scene/scene_editor_gizmo.h"
+	"src/scene/scene_editor_gizmo_collection.h"
+	"src/scene/scene_editor_window.h"
+	"src/scene/gizmos/polygon_gizmo.h"
+	"src/scene/gizmos/selected_bounds_gizmo.h"
+	"src/scene/gizmos/translate_gizmo.h"
+	
 	"src/ui/console_window.h"
 	"src/ui/editor_ui_factory.h"
 	"src/ui/load_project_window.h"
 	"src/ui/scroll_background.h"
+	"src/ui/select_asset_widget.h"
 	"src/ui/taskbar.h"
 	"src/ui/toolbar.h"
 	)
 
-if (MSVC)
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 	set (editor_headers
 		${editor_headers}
 		"res/halley-editor.rc"
@@ -64,12 +103,18 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 	add_dependencies(halley-editor halley-metal)
 endif()
 
+get_property(deps GLOBAL PROPERTY halley_external_plugin_dependencies)
+if (NOT ("${deps}" STREQUAL ""))
+    separate_arguments(deps)
+    add_dependencies(halley-editor ${deps})
+endif()
+
 target_link_libraries (halley-editor
         halley-tools
         ${FREETYPE_LIBRARIES}
         ${YAMLCPP_LIBRARY}
         ${Boost_FILESYSTEM_LIBRARY}
         ${Boost_SYSTEM_LIBRARY}
-        ${EXTRA_LIBS}
+		${EXTRA_LIBS}
+		${ShaderConductor_LIBRARY}
         )
-

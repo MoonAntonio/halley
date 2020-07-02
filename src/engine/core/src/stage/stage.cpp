@@ -3,7 +3,7 @@
 using namespace Halley;
 
 Stage::Stage(String _name)
-	: name(_name)
+	: name(std::move(_name))
 {
 }
 
@@ -51,11 +51,13 @@ MovieAPI& Stage::getMovieAPI() const
 
 Resources& Stage::getResources() const
 {
-	return api->core->getResources();
+	Expects(resources);
+	return *resources;
 }
 
 Game& Stage::getGame() const
 {
+	Expects(game);
 	return *game;
 }
 
@@ -64,8 +66,9 @@ void Stage::setGame(Game& g)
 	game = &g;
 }
 
-void Stage::doInit(const HalleyAPI* _api)
+void Stage::doInit(const HalleyAPI* _api, Resources& _resources)
 {
+	resources = &_resources;
 	api = _api;
 	init();
 }

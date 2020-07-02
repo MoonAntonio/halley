@@ -8,35 +8,35 @@ void TextureRenderTarget::setTarget(int attachmentNumber, std::shared_ptr<Textur
 {
 	Expects(attachmentNumber >= 0);
 	Expects(attachmentNumber < 8);
-	Expects(tex != std::shared_ptr<Texture>());
+	Expects(tex);
 
 	if (int(attachments.size()) <= attachmentNumber) {
-		attachments.resize(attachmentNumber + 1);
+		attachments.resize(size_t(attachmentNumber) + 1);
 	}
-	attachments[attachmentNumber] = tex;
+	attachments[attachmentNumber] = std::move(tex);
 
 	dirty = true;
 }
 
-std::shared_ptr<Texture> TextureRenderTarget::getTexture(int attachmentNumber) const
+const std::shared_ptr<Texture>& TextureRenderTarget::getTexture(int attachmentNumber) const
 {
 	return attachments.at(attachmentNumber);
 }
 
 void TextureRenderTarget::setDepthTexture(std::shared_ptr<Texture> tex)
 {
-	depth = tex;
+	depth = std::move(tex);
 	dirty = true;
 }
 
-std::shared_ptr<Texture> TextureRenderTarget::getDepthTexture() const
+const std::shared_ptr<Texture>& TextureRenderTarget::getDepthTexture() const
 {
 	return depth;
 }
 
 Rect4i TextureRenderTarget::getViewPort() const
 {
-	return viewPort ? viewPort.get() : Rect4i(Vector2i(0, 0), getTexture(0)->getSize());
+	return viewPort ? viewPort.value() : Rect4i(Vector2i(0, 0), getTexture(0)->getSize());
 }
 
 void TextureRenderTarget::setViewPort(Rect4i vp)
@@ -46,5 +46,5 @@ void TextureRenderTarget::setViewPort(Rect4i vp)
 
 void TextureRenderTarget::resetViewPort()
 {
-	viewPort = Maybe<Rect4i>();
+	viewPort = std::optional<Rect4i>();
 }

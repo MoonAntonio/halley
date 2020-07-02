@@ -14,6 +14,7 @@ namespace Halley
 	class Painter;
 	class MaterialImporter;
 	class MaterialTextureParameter;
+	class Texture;
 
 	enum class ShaderParameterType
 	{
@@ -138,8 +139,10 @@ namespace Halley
 	public:
 		String name;
 		ShaderParameterType type;
-		int location;
-		int offset;
+		String semantic;
+		int semanticIndex = 0;
+		int location = 0;
+		int offset = 0;
 
 		MaterialAttribute();
 		MaterialAttribute(String name, ShaderParameterType type, int location, int offset = 0);
@@ -148,6 +151,21 @@ namespace Halley
 		void deserialize(Deserializer& s);
 
 		static size_t getAttributeSize(ShaderParameterType type);
+	};
+
+	class MaterialTexture
+	{
+	public:
+		String name;
+		String defaultTextureName;
+		ShaderParameterType samplerType = ShaderParameterType::Texture2D;
+		std::shared_ptr<const Texture> defaultTexture;
+
+		MaterialTexture();
+		MaterialTexture(String name, String defaultTexture, ShaderParameterType samplerType);
+
+		void serialize(Serializer& s) const;
+		void deserialize(Deserializer& s);
 	};
 
 	class MaterialDefinition final : public Resource
@@ -163,6 +181,7 @@ namespace Halley
 		void reload(Resource&& resource) override;
 		void load(const ConfigNode& node);
 
+		void addPass(const MaterialPass& materialPass);
 		int getNumPasses() const;
 		const MaterialPass& getPass(int n) const;
 		MaterialPass& getPass(int n);
@@ -173,9 +192,9 @@ namespace Halley
 		size_t getVertexPosOffset() const;
 		const Vector<MaterialAttribute>& getAttributes() const { return attributes; }
 		const Vector<MaterialUniformBlock>& getUniformBlocks() const { return uniformBlocks; }
-		const Vector<String>& getTextures() const { return textures; }
-		
-		void addPass(const MaterialPass& materialPass);
+		const Vector<MaterialTexture>& getTextures() const { return textures; }
+		const std::shared_ptr<const Texture>& getFallbackTexture() const;
+		int getDefaultMask() const;
 
 		static std::unique_ptr<MaterialDefinition> loadResource(ResourceLoader& loader);
 		constexpr static AssetType getAssetType() { return AssetType::MaterialDefinition; }
@@ -183,16 +202,22 @@ namespace Halley
 		void serialize(Serializer& s) const;
 		void deserialize(Deserializer& s);
 
+		bool isColumnMajor() const;
+
 	private:
 		VideoAPI* api = nullptr;
 
 		String name;
 		Vector<MaterialPass> passes;
-		Vector<String> textures;
+		Vector<MaterialTexture> textures;
 		Vector<MaterialUniformBlock> uniformBlocks;
 		Vector<MaterialAttribute> attributes;
 		int vertexSize = 0;
 		int vertexPosOffset = 0;
+		int defaultMask = 1;
+		bool columnMajor = false;
+
+		std::shared_ptr<const Texture> fallbackTexture;
 
 		void loadUniforms(const ConfigNode& node);
 		void loadTextures(const ConfigNode& node);

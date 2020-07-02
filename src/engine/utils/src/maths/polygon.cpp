@@ -23,6 +23,9 @@
 #include "halley/maths/polygon.h"
 #include <limits>
 #include "halley/maths/ray.h"
+#include "halley/maths/aabb.h"
+#include "halley/maths/circle.h"
+#include "halley/maths/line.h"
 using namespace Halley;
 
 
@@ -30,11 +33,10 @@ using namespace Halley;
 // Constructor
 Polygon::Polygon()
 {
-	outerRadius = 0.0f;
 }
 
-Polygon::Polygon(const VertexList& _vertices, Vertex _origin)
-	: vertices(_vertices), origin(_origin)
+Polygon::Polygon(VertexList vertices)
+	: vertices(std::move(vertices))
 {
 	realize();
 }
@@ -44,54 +46,72 @@ Polygon::Polygon(const VertexList& _vertices, Vertex _origin)
 // Realize that the polygon has changed shape
 void Polygon::realize()
 {
-	// Calculate the outer radius and aabb
-	float x1, x2, y1, y2;
-	x1 = y1 = std::numeric_limits<float>::max();
-	x2 = y2 = std::numeric_limits<float>::lowest();
-
-	outerRadius = 0.0f;
-	size_t len = vertices.size();
-	float cur;
-	for (size_t i=0;i<len;i++) {
-		Vector2f v = vertices[i];
-		if (v.x < x1) x1 = v.x;
-		if (v.x > x2) x2 = v.x;
-		if (v.y < y1) y1 = v.y;
-		if (v.y > y2) y2 = v.y;
-		cur = v.squaredLength();
-		if (cur > outerRadius) outerRadius = cur;
-	}
-	aabb.set(Vector2f(x1, y1), Vector2f(x2, y2));
-	outerRadius = sqrt(outerRadius);
+	aabb = AABB::getSpanningBox(vertices).toRect4f();
+	circle = Circle::getSpanningCircle(vertices);
 }
 
 
 ///////////////////////////////////////////////////////
 // Checks if a particular point is inside the polygon
-bool Polygon::isPointInside(const Vector2f &point) const
+// Only works for convex polygons
+bool Polygon::isPointInsideConvex(Vector2f point) const
 {
-	Vector2f p = point - origin;
-
 	// Fast fail
-	if (p.squaredLength() > outerRadius*outerRadius) return false;
-
-	// Do cross product with all the segments, except for last
-	Vector2f a,b;
-	size_t len = vertices.size();
-	for (size_t i=0; i<len-1; i++) {
-		a = p - vertices[i];
-		b = vertices[i+1] - vertices[i];
-		if (a.cross(b) > 0) return false;
+	if (!circle.contains(point)) {
+		return false;
 	}
 
-	// Try last segment (duplicated code just to avoid a %, fuck yeah)
-	len--;
-	a = p - vertices[len];
-	b = vertices[0] - vertices[len];
-	if (a.cross(b) > 0) return false;
+	// Do cross product with all the segments
+	const size_t len = vertices.size();
+	for (size_t i = 0; i < len; i++) {
+		const auto a = point - vertices[i];
+		const auto b = vertices[(i+1) % len] - vertices[i];
+		if (a.cross(b) > 0) {
+			return false;
+		}
+	}
 
 	// Nothing failed, so it's inside
 	return true;
+}
+
+bool Polygon::isPointInside(Vector2f point) const
+{
+	// Fast fail
+	if (!circle.contains(point)) {
+		return false;
+	}
+	if (!aabb.contains(point)) {
+		return false;
+	}
+
+	size_t nLeft = 0;
+	size_t nRight = 0;
+	const size_t len = vertices.size();
+
+	// For each segment that overlaps this point vertically, classify it as "left" or "right"
+	for (size_t i = 0; i < len; i++) {
+		const auto a = vertices[i];
+		const auto b = vertices[(i+1) % len];
+		auto r = Range<float>(a.y, b.y);
+		if (r.contains(point.y)) {
+			if (a.x < point.x && b.x < point.x) {
+				nLeft++;
+			} else if (a.x > point.x && b.x > point.x) {
+				nRight++;
+			} else {
+				const float t = (point.y - a.y) / (b.y - a.y);
+				const float refX = lerp(a.x, b.x, t);
+				if (refX < point.x) {
+					nLeft++;
+				} else {
+					nRight++;
+				}
+			}
+		}
+	}
+
+	return (nLeft % 2) == 1 && (nRight % 2) == 1;
 }
 
 
@@ -112,8 +132,10 @@ Vector2f average(Vector<Vector2f>& v)
 bool Polygon::overlaps(const Polygon &param,Vector2f *translation,Vector2f *collisionPoint) const
 {
 	// Check if they are within overlap range
-	float maxDist = outerRadius + param.outerRadius;
-	if ((origin-param.origin).squaredLength() >= maxDist*maxDist) return false;
+	const float maxDist = circle.getRadius() + param.circle.getRadius();
+	if ((circle.getCentre() - param.circle.getCentre()).squaredLength() >= maxDist * maxDist) {
+		return false;
+	}
 
 	// AABB test
 	//if (!aabb.overlaps(param.aabb, param.getOrigin()-getOrigin())) return false;
@@ -181,11 +203,16 @@ bool Polygon::overlaps(const Polygon &param,Vector2f *translation,Vector2f *coll
 
 		// Find the collision point
 		if (collisionPoint) {
-			Vector2f colPoint = (origin + param.origin)/2.0f;
-			if (v1.size() == 1) colPoint = v1[0];
-			else if (v2.size() == 1) colPoint = v2[0];
-			else if (!v1.empty()) colPoint = average(v1); //v1[0];
-			else if (!v2.empty()) colPoint = average(v2); //v2[0];
+			Vector2f colPoint = (circle.getCentre() + param.circle.getCentre()) / 2.0f;
+			if (v1.size() == 1) {
+				colPoint = v1[0];
+			} else if (v2.size() == 1) {
+				colPoint = v2[0];
+			} else if (!v1.empty()) {
+				colPoint = average(v1); //v1[0];
+			} else if (!v2.empty()) {
+				colPoint = average(v2); //v2[0];
+			}
 			*collisionPoint = colPoint;
 		}
 
@@ -197,18 +224,42 @@ bool Polygon::overlaps(const Polygon &param,Vector2f *translation,Vector2f *coll
 	return true;
 }
 
+Vector2f Polygon::getClosestPoint(Vector2f rawPoint, float anisotropy) const
+{
+	Expects(!vertices.empty());
+
+	const auto scale = Vector2f(1.0f, 1.0f / anisotropy);
+	const auto point = rawPoint * scale;
+	
+	Vector2f bestPoint = vertices[0];
+	float closestDistance2 = std::numeric_limits<float>::infinity();
+	
+	const size_t n = vertices.size();
+	for (size_t i = 0; i < n; ++i) {
+		const Vector2f p = LineSegment(vertices[i] * scale, vertices[(i + 1) % n] * scale).getClosestPoint(point);
+
+		const float dist2 = (point - p).squaredLength();
+		if (dist2 < closestDistance2) {
+			closestDistance2 = dist2;
+			bestPoint = p;
+		}
+	}
+
+	return bestPoint * Vector2f(1.0f, anisotropy);
+}
+
 
 ////////////////////////////////
 // Project polygon into an axis
 void Polygon::project(const Vector2f &_axis,float &_min,float &_max) const
 {
 	Vector2f axis = _axis;
-	float dot = axis.dot(vertices[0]+origin);
+	float dot = axis.dot(vertices[0]);
 	float min = dot;
 	float max = dot;
 	size_t len = vertices.size();
 	for (size_t i=1;i<len;i++) {
-		dot = axis.dot(vertices[i]+origin);
+		dot = axis.dot(vertices[i]);
 		if (dot < min) min = dot;
 		else if (dot > max) max = dot;
 	}
@@ -225,8 +276,8 @@ void Polygon::unproject(const Vector2f &axis,const float point,Vector<Vector2f> 
 	size_t len = vertices.size();
 	float dot;
 	for (size_t i=0;i<len;i++) {
-		dot = axis.dot(vertices[i]+origin);
-		if (dot == point) ver.push_back(vertices[i] + origin);
+		dot = axis.dot(vertices[i]);
+		if (dot == point) ver.push_back(vertices[i]);
 	}
 }
 
@@ -280,31 +331,34 @@ void Polygon::setVertices(const VertexList& _vertices)
 	realize();
 }
 
-float Polygon::getRadius() const
+void Polygon::translate(Vector2f offset)
 {
-	return outerRadius;
+	for (auto& v: vertices) {
+		v += offset;
+	}
+	realize();
 }
 
-Rect4f Polygon::getAABB() const
-{
-	return aabb;
-}
 
-Maybe<std::pair<float, Vector2f>> Polygon::getCollisionWithSweepingCircle(Vector2f p0, float radius, Vector2f moveDir, float moveLen) const
+Polygon::CollisionResult Polygon::getCollisionWithSweepingCircle(Vector2f p0, float radius, Vector2f moveDir, float moveLen) const
 {
+	CollisionResult result;
+
 	// This is used to grow AABBs to check if p0 is inside
 	// If this coarse test fails, the sweep shouldn't overlap the polygon
 	const float border = radius + (moveLen * std::max(std::abs(moveDir.x), std::abs(moveDir.y)));
 	if (!getAABB().grow(border).contains(p0)) {
-		return {};
+		result.fastFail = true;
+		return result;
 	}
 
-	Maybe<std::pair<float, Vector2f>> result;
-	const auto submit = [&] (Maybe<std::pair<float, Vector2f>> c)
+	const auto submit = [&] (std::optional<std::pair<float, Vector2f>> c)
 	{
-		if (c && c.get().first < moveLen) {
-			if (!result || c.get().first < result.get().first) {
-				result = c;
+		if (c && c->first < moveLen) {
+			if (!result.collided || c->first < result.distance) {
+				result.collided = true;
+				result.distance = c->first;
+				result.normal = c->second;
 			}
 		}
 	};
@@ -336,15 +390,17 @@ Maybe<std::pair<float, Vector2f>> Polygon::getCollisionWithSweepingCircle(Vector
 	return result;
 }
 
-Maybe<std::pair<float, Vector2f>> Polygon::getCollisionWithSweepingEllipse(Vector2f p0, Vector2f radius, Vector2f moveDir, float moveLen) const
+Polygon::CollisionResult Polygon::getCollisionWithSweepingEllipse(Vector2f p0, Vector2f radius, Vector2f moveDir, float moveLen) const
 {
 	// This is the same algorithm as above, but we scale everything so the ellipse becomes a circle
+	CollisionResult result;
 	
 	// This is used to grow AABBs to check if p0 is inside
 	// If this coarse test fails, the sweep shouldn't overlap the polygon
 	const float border = std::max(radius.x, radius.y) + (moveLen * std::max(std::abs(moveDir.x), std::abs(moveDir.y)));
 	if (!getAABB().grow(border).contains(p0)) {
-		return {};
+		result.fastFail = true;
+		return result;
 	}
 
 	const auto localRadius = radius.x;
@@ -358,13 +414,14 @@ Maybe<std::pair<float, Vector2f>> Polygon::getCollisionWithSweepingEllipse(Vecto
 	const auto ray = Ray(localP0, localMoveDir);
 
 	float bestLen = localMoveLen;
-	Maybe<std::pair<float, Vector2f>> result;
-	const auto submit = [&] (Maybe<std::pair<float, Vector2f>> c)
+	const auto submit = [&] (std::optional<std::pair<float, Vector2f>> c)
 	{
 		if (c) {
-			const float lenToCol = c.get().first;
+			const float lenToCol = c->first;
 			if (lenToCol < bestLen) {
-				result = c;
+				result.collided = true;
+				result.distance = c->first;
+				result.normal = c->second;
 				bestLen = lenToCol;
 			}
 		}
@@ -392,14 +449,14 @@ Maybe<std::pair<float, Vector2f>> Polygon::getCollisionWithSweepingEllipse(Vecto
 		submit(ray.castLineSegment(a + offset, b + offset));
 	}
 
-	if (result) {
+	if (result.collided) {
 		// Transform the results back to global space
-		result->first *= moveLen / localMoveLen;
+		result.distance *= moveLen / localMoveLen;
 
 		// This is a multiply instead of the divide you might expect
 		// The correct operation here is (norm.orthoLeft() / transform).orthoRight().normalized()
 		// But this is equivalent and faster
-		result->second = (result->second * transformation).normalized();
+		result.normal = (result.normal * transformation).normalized();
 	}
 	return result;
 }

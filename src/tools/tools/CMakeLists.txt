@@ -1,6 +1,6 @@
 project (halley-tools)
 
-include_directories(${BOOST_INCLUDE_DIR} ${FREETYPE_INCLUDE_DIRS} ${YAMLCPP_INCLUDE_DIR} "include" "../../engine/core/include" "../../engine/utils/include" "../../engine/audio/include" "../../engine/net/include" "../../contrib/libogg/include" "../../contrib/libvorbis/include")
+include_directories(${BOOST_INCLUDE_DIR} ${FREETYPE_INCLUDE_DIRS} ${YAMLCPP_INCLUDE_DIR} ${ShaderConductor_INCLUDE_DIR} "include" "../../engine/core/include" "../../engine/utils/include" "../../engine/audio/include" "../../engine/net/include" "../../contrib/libogg/include" "../../contrib/libvorbis/include")
 
 set(SOURCES
 
@@ -34,11 +34,15 @@ set(SOURCES
     "src/codegen/cpp/cpp_class_gen.cpp"
     "src/codegen/codegen.cpp"
     "src/codegen/codegen_tool.cpp"
-    "src/codegen/component_schema.cpp"
-    "src/codegen/custom_type_schema.cpp"
-    "src/codegen/message_schema.cpp"
-    "src/codegen/system_schema.cpp"
+
+    "src/ecs/component_schema.cpp"
+    "src/ecs/custom_type_schema.cpp"
+    "src/ecs/ecs_data.cpp"
+    "src/ecs/message_schema.cpp"
+    "src/ecs/system_schema.cpp"
     
+    "src/dll/dynamic_library.cpp"
+
     "src/distance_field/distance_field_generator.cpp"
     "src/distance_field/distance_field_tool.cpp"
     
@@ -53,6 +57,11 @@ set(SOURCES
     "src/packer/asset_packer.cpp"
     "src/packer/asset_packer_task.cpp"
     "src/packer/asset_packer_tool.cpp"
+
+    "src/runner/dynamic_loader.cpp"
+    "src/runner/memory_patcher.cpp"
+    "src/runner/runner_tool.cpp"
+    "src/runner/symbol_loader.cpp"
 
     "src/tool/cli_tool.cpp"
 
@@ -70,6 +79,8 @@ set(SOURCES
 
     "src/vs_project/vs_project_manipulator.cpp"
     "src/vs_project/vs_project_tool.cpp"
+
+    "src/yaml/yaml_convert.cpp"
     )
 
 set(HEADERS
@@ -91,12 +102,15 @@ set(HEADERS
     "include/halley/tools/make_font/font_generator.h"
     "include/halley/tools/make_font/make_font_tool.h"
 
-    "include/halley/tools/codegen/component_schema.h"
-    "include/halley/tools/codegen/custom_type_schema.h"
-    "include/halley/tools/codegen/fields_schema.h"
-    "include/halley/tools/codegen/message_schema.h"
-    "include/halley/tools/codegen/system_schema.h"
+    "include/halley/tools/ecs/component_schema.h"
+    "include/halley/tools/ecs/custom_type_schema.h"
+    "include/halley/tools/ecs/ecs_data.h"
+    "include/halley/tools/ecs/fields_schema.h"
+    "include/halley/tools/ecs/message_schema.h"
+    "include/halley/tools/ecs/system_schema.h"
     
+    "include/halley/tools/dll/dynamic_library.h"
+
     "include/halley/tools/assets/asset_collector.h"
     "include/halley/tools/assets/asset_importer.h"
     "include/halley/tools/assets/check_assets_task.h"
@@ -118,9 +132,17 @@ set(HEADERS
     "include/halley/tools/project/project.h"
     "include/halley/tools/project/project_loader.h"
     "include/halley/tools/project/project_properties.h"
+
+    "include/halley/tools/runner/dynamic_loader.h"
+    "include/halley/tools/runner/memory_patcher.h"
+    "include/halley/tools/runner/runner_tool.h"
+    "include/halley/tools/runner/symbol_loader.h"
+    "include/halley/tools/runner/win.h"
     
     "include/halley/tools/vs_project/vs_project_manipulator.h"
     "include/halley/tools/vs_project/vs_project_tool.h"
+
+    "include/halley/tools/yaml/yaml_convert.h"
 
     "src/assets/importers/animation_importer.h"
     "src/assets/importers/audio_event_importer.h"
@@ -153,7 +175,7 @@ set(HEADERS
 assign_source_group(${SOURCES})
 assign_source_group(${HEADERS})
 
-add_library (halley-tools ${SOURCES} ${HEADERS})
+add_library (halley-tools ${SOURCES} ${HEADERS} ${ShaderConductor_LIBRARY})
 
 target_link_libraries (halley-tools
     halley-core

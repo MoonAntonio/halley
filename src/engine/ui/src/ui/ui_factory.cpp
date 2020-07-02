@@ -23,6 +23,7 @@
 #include "halley/ui/widgets/ui_hybrid_list.h"
 #include "widgets/ui_spin_list.h"
 #include "widgets/ui_option_list_morpher.h"
+#include "widgets/ui_tree_list.h"
 
 using namespace Halley;
 
@@ -60,6 +61,11 @@ UIFactory::UIFactory(const HalleyAPI& api, Resources& resources, const I18N& i18
 	addFactory("hybridList", [=] (const ConfigNode& node) { return makeHybridList(node); });
 	addFactory("spinList", [=](const ConfigNode& node) { return makeSpinList(node); });
 	addFactory("optionListMorpher", [=](const ConfigNode& node) { return makeOptionListMorpher(node); });
+	addFactory("treeList", [=](const ConfigNode& node) { return makeTreeList(node); });
+}
+
+UIFactory::~UIFactory()
+{
 }
 
 void UIFactory::addFactory(const String& key, WidgetFactory factory)
@@ -129,6 +135,16 @@ Resources& UIFactory::getResources() const
 	return resources;
 }
 
+std::shared_ptr<InputKeyboard> UIFactory::getKeyboard() const
+{
+	return keyboard;
+}
+
+UIFactory UIFactory::withResources(Resources& newResources) const
+{
+	return UIFactory(api, newResources, i18n, styleSheet);
+}
+
 std::shared_ptr<UIWidget> UIFactory::makeWidget(const ConfigNode& entryNode)
 {
 	auto& widgetNode = entryNode["widget"];
@@ -154,7 +170,7 @@ std::shared_ptr<UIWidget> UIFactory::makeWidget(const ConfigNode& entryNode)
 	return widget;
 }
 
-Maybe<UISizer> UIFactory::makeSizer(const ConfigNode& entryNode)
+std::optional<UISizer> UIFactory::makeSizer(const ConfigNode& entryNode)
 {
 	const bool hasSizer = entryNode.hasKey("sizer");
 	const bool hasChildren = entryNode.hasKey("children");
@@ -171,18 +187,28 @@ Maybe<UISizer> UIFactory::makeSizer(const ConfigNode& entryNode)
 		int nColumns = sizerNode["columns"].asInt(1);
 		
 		sizer = UISizer(sizerType, gap, nColumns);
+
+		if (sizerNode["columnProportions"].getType() == ConfigNodeType::Sequence) {
+			auto& seq = sizerNode["columnProportions"].asSequence();
+			std::vector<float> proportions;
+			proportions.reserve(seq.size());
+			for (auto& e: seq) {
+				proportions.push_back(e.asFloat());
+			}
+			sizer.setColumnProportions(proportions);
+		}
 	}
 
 	loadSizerChildren(sizer, entryNode["children"]);
 
-	return std::move(sizer);
+	return sizer;
 }
 
 UISizer UIFactory::makeSizerOrDefault(const ConfigNode& entryNode, UISizer&& defaultSizer)
 {
 	auto sizer = makeSizer(entryNode);
 	if (sizer) {
-		return std::move(sizer.get());
+		return std::move(sizer.value());
 	} else {
 		return std::move(defaultSizer);
 	}
@@ -192,7 +218,7 @@ std::shared_ptr<UISizer> UIFactory::makeSizerPtr(const ConfigNode& entryNode)
 {
 	auto sizer = makeSizer(entryNode);
 	if (sizer) {
-		return std::make_shared<UISizer>(std::move(sizer.get()));
+		return std::make_shared<UISizer>(std::move(sizer.value()));
 	} else {
 		return {};
 	}
@@ -266,7 +292,7 @@ void UIFactory::applyInputButtons(UIWidget& widget, const String& key)
 	}
 }
 
-Maybe<Vector2f> UIFactory::asMaybeVector2f(const ConfigNode& node)
+std::optional<Vector2f> UIFactory::asMaybeVector2f(const ConfigNode& node)
 {
 	if (node.getType() == ConfigNodeType::Sequence) {
 		auto seq = node.asSequence();
@@ -276,13 +302,13 @@ Maybe<Vector2f> UIFactory::asMaybeVector2f(const ConfigNode& node)
 	}
 }
 
-Vector2f UIFactory::asVector2f(const ConfigNode& node, Maybe<Vector2f> defaultValue)
+Vector2f UIFactory::asVector2f(const ConfigNode& node, std::optional<Vector2f> defaultValue)
 {
 	if (node.getType() == ConfigNodeType::Sequence) {
 		auto seq = node.asSequence();
 		return Vector2f(seq.at(0).asFloat(), seq.at(1).asFloat());
 	} else if (defaultValue) {
-		return defaultValue.get();
+		return defaultValue.value();
 	} else {
 		throw Exception("Unable to parse node as Vector2f.", HalleyExceptions::UI);
 	}
@@ -324,13 +350,13 @@ std::vector<UIFactory::ParsedOption> UIFactory::parseOptions(const ConfigNode& n
 	return result;
 }
 
-Vector4f UIFactory::asVector4f(const ConfigNode& node, Maybe<Vector4f> defaultValue)
+Vector4f UIFactory::asVector4f(const ConfigNode& node, std::optional<Vector4f> defaultValue)
 {
 	if (node.getType() == ConfigNodeType::Sequence) {
 		auto seq = node.asSequence();
 		return Vector4f(seq.at(0).asFloat(), seq.at(1).asFloat(), seq.at(2).asFloat(), seq.at(3).asFloat());
 	} else if (defaultValue) {
-		return defaultValue.get();
+		return defaultValue.value();
 	} else {
 		throw Exception("Unable to parse node as Vector2f.", HalleyExceptions::UI);
 	}
@@ -378,21 +404,13 @@ std::shared_ptr<UIWidget> UIFactory::makeButton(const ConfigNode& entryNode)
 
 	bool hasString = false;
 	auto sizer = makeSizerOrDefault(entryNode, UISizer());
-	if (!label.getString().isEmpty()) {
-		const auto& renderer = style.getTextRenderer("label");
-		auto uiLabel = std::make_shared<UILabel>(id + "_label", renderer, label);
-		if (style.hasTextRenderer("hoveredLabel")) {
-			uiLabel->setHoverable(style.getTextRenderer("label"), style.getTextRenderer("hoveredLabel"));
-		}
-		if (style.hasTextRenderer("selectedLabel"))	{
-			uiLabel->setSelectable(style.getTextRenderer("label"), style.getTextRenderer("selectedLabel"));
-		}
-		sizer.add(uiLabel, 1, style.getBorder("labelBorder"), UISizerAlignFlags::Centre);
-		hasString = true;
-	}
-
 	auto result = std::make_shared<UIButton>(id, style, std::move(sizer));
 
+	if (!label.getString().isEmpty()) {
+		result->setLabel(LocalisedString::fromUserString(label.getString()));
+		hasString = true;
+	}
+	
 	if (node.hasKey("icon")) {
 		auto icon = Sprite().setImage(getResources(), node["icon"].asString());
 		auto image = std::make_shared<UIImage>(icon);
@@ -499,7 +517,7 @@ std::shared_ptr<UIWidget> UIFactory::makeList(const ConfigNode& entryNode)
 		widget->setItemActive(o.id, o.active);
 	}
 
-	widget->setDrag(node["canDrag"].asBool(false));
+	widget->setDragEnabled(node["canDrag"].asBool(false));
 	widget->setUniformSizedItems(node["uniformSizedItems"].asBool(false));
 
 	return widget;
@@ -562,7 +580,7 @@ std::shared_ptr<UIWidget> UIFactory::makeImage(const ConfigNode& entryNode)
 	sprite.setColour(Colour4f::fromString(col)).setFlip(flip).setRotation(rotation);
 	
 	if (pivot) {
-		sprite.setPivot(pivot.get());
+		sprite.setPivot(pivot.value());
 	}
 	Vector4f innerBorder = asVector4f(node["innerBorder"], Vector4f());
 
@@ -595,18 +613,22 @@ std::shared_ptr<UIWidget> UIFactory::makeScrollPane(const ConfigNode& entryNode)
 	auto clipSize = asVector2f(node["clipSize"], Vector2f());
 	auto scrollHorizontal = node["scrollHorizontal"].asBool(false);
 	auto scrollVertical = node["scrollVertical"].asBool(true);
+	auto mouseWheelEnabled = node["mouseWheelEnabled"].asBool(true);
 
-	return std::make_shared<UIScrollPane>(id, clipSize, makeSizerOrDefault(entryNode, UISizer(UISizerType::Vertical)), scrollHorizontal, scrollVertical);
+	auto result = std::make_shared<UIScrollPane>(id, clipSize, makeSizerOrDefault(entryNode, UISizer(UISizerType::Vertical)), scrollHorizontal, scrollVertical);
+	result->setScrollWheelEnabled(mouseWheelEnabled);
+	return result;
 }
 
 std::shared_ptr<UIWidget> UIFactory::makeScrollBar(const ConfigNode& entryNode)
 {
 	auto& node = entryNode["widget"];
+	auto id = node["id"].asString("");
 	auto style = UIStyle(node["style"].asString("scrollbar"), styleSheet);
 	auto scrollDirection = fromString<UIScrollDirection>(node["scrollDirection"].asString("vertical"));
 	auto alwaysShow = !node["autoHide"].asBool(false);
 
-	return std::make_shared<UIScrollBar>(scrollDirection, style, alwaysShow);
+	return std::make_shared<UIScrollBar>(id, scrollDirection, style, alwaysShow);
 }
 
 std::shared_ptr<UIWidget> UIFactory::makeScrollBarPane(const ConfigNode& entryNode)
@@ -618,8 +640,11 @@ std::shared_ptr<UIWidget> UIFactory::makeScrollBarPane(const ConfigNode& entryNo
 	auto scrollHorizontal = node["scrollHorizontal"].asBool(false);
 	auto scrollVertical = node["scrollVertical"].asBool(true);
 	auto alwaysShow = !node["autoHide"].asBool(false);
+	auto mouseWheelEnabled = node["mouseWheelEnabled"].asBool(true);
 
-	return std::make_shared<UIScrollBarPane>(id, clipSize, style, makeSizerOrDefault(entryNode, UISizer(UISizerType::Vertical)), scrollHorizontal, scrollVertical, alwaysShow);
+	auto result = std::make_shared<UIScrollBarPane>(id, clipSize, style, makeSizerOrDefault(entryNode, UISizer(UISizerType::Vertical)), scrollHorizontal, scrollVertical, alwaysShow);
+	result->getPane()->setScrollWheelEnabled(mouseWheelEnabled);
+	return result;
 }
 
 std::shared_ptr<UIWidget> UIFactory::makeSlider(const ConfigNode& entryNode)
@@ -800,6 +825,21 @@ std::shared_ptr<UIWidget> UIFactory::makeOptionListMorpher(const ConfigNode& ent
 	auto widget = std::make_shared<UIOptionListMorpher>(id, dropdownStyle, spinlistStyle, scrollStyle, listStyle);
 	applyInputButtons(*widget, node["inputButtons"].asString("list"));
 	widget->setOptions(optionIds, optionLabels);
+	return widget;
+}
+
+std::shared_ptr<UIWidget> UIFactory::makeTreeList(const ConfigNode& entryNode)
+{
+	const auto& node = entryNode["widget"];
+	auto id = node["id"].asString();
+	auto style = UIStyle(node["style"].asString("list"), styleSheet);
+	auto label = parseLabel(node);
+
+	auto widget = std::make_shared<UITreeList>(id, style);
+	applyInputButtons(*widget, node["inputButtons"].asString("treeList"));
+
+	widget->setDragEnabled(node["canDrag"].asBool(false));
+
 	return widget;
 }
 

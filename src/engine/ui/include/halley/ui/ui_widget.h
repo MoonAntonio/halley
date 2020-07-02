@@ -29,11 +29,12 @@ namespace Halley {
 		friend class UIRoot;
 
 	public:
-		UIWidget(String id = "", Vector2f minSize = {}, Maybe<UISizer> sizer = {}, Vector4f innerBorder = {});
+		UIWidget(String id = "", Vector2f minSize = {}, std::optional<UISizer> sizer = {}, Vector4f innerBorder = {});
 		virtual ~UIWidget();
 
 		void doDraw(UIPainter& painter) const;
 		void doUpdate(UIWidgetUpdateType updateType, Time t, UIInputType inputType, JoystickType joystickType);
+		void doRender(RenderContext& rc);
 
 		Vector2f getLayoutMinimumSize(bool force) const override;
 		void setRect(Rect4f rect) override;
@@ -49,7 +50,7 @@ namespace Halley {
 		void setAnchor(UIAnchor anchor);
 		void setAnchor();
 
-		virtual Maybe<UISizer>& tryGetSizer();
+		virtual std::optional<UISizer>& tryGetSizer();
 		virtual UISizer& getSizer();
 
 		void add(std::shared_ptr<IUIElement> element, float proportion = 0, Vector4f border = Vector4f(), int fillFlags = UISizerFillFlags::Fill) override;
@@ -106,7 +107,7 @@ namespace Halley {
 		void setHandle(UIEventType type, String id, UIEventCallback handler);
 
 		void setCanSendEvents(bool canSend);
-		
+
 		virtual void setInputType(UIInputType uiInput);
 		virtual void setJoystickType(JoystickType joystickType);
 		void setOnlyEnabledWithInputs(const std::vector<UIInputType>& inputs);
@@ -126,18 +127,20 @@ namespace Halley {
 		void bindData(const String& childId, int initialValue, UIDataBindInt::WriteCallback callback = {});
 		void bindData(const String& childId, float initialValue, UIDataBindFloat::WriteCallback callback = {});
 		void bindData(const String& childId, const String& initialValue, UIDataBindString::WriteCallback callback = {});
-		
+
 		bool isDescendentOf(const UIWidget& ancestor) const override;
-		void setMouseClip(Maybe<Rect4f> mouseClip);
+		void setMouseClip(std::optional<Rect4f> mouseClip, bool force);
 
 		virtual void onManualControlCycleValue(int delta);
 		virtual void onManualControlAnalogueAdjustValue(float delta, Time t);
 		virtual void onManualControlActivate();
-		
+
 		UIInput::Priority getInputPriority() const;
 
 		void setChildLayerAdjustment(int delta);
 		int getChildLayerAdjustment() const;
+		void setNoClipChildren(bool noClip);
+		bool getNoClipChildren() const;
 
 		void sendEvent(UIEvent&& event) const override;
 		void sendEventDown(const UIEvent& event) const;
@@ -147,15 +150,20 @@ namespace Halley {
 		void clearBehaviours();
 		const std::vector<std::shared_ptr<UIBehaviour>>& getBehaviours() const;
 
-		Maybe<AudioHandle> playSound(const String& eventName);
+		std::optional<AudioHandle> playSound(const String& eventName);
 
 		bool needsLayout() const;
 		void markAsNeedingLayout() override;
+
+		virtual bool canReceiveFocus() const;
+
+		virtual void onAddedToRoot();
 
 	protected:
 		virtual void draw(UIPainter& painter) const;
 		virtual void drawAfterChildren(UIPainter& painter) const;
 		virtual void drawChildren(UIPainter& painter) const;
+		virtual void render(RenderContext& rc) const;
 		virtual void update(Time t, bool moved);
 
 		void updateBehaviours(Time t);
@@ -185,6 +193,7 @@ namespace Halley {
 
 	private:
 		void setParent(UIParent* parent);
+		void notifyTreeAddedToRoot();
 
 		void setWidgetRect(Rect4f rect);
 		void resetInputResults();
@@ -200,10 +209,10 @@ namespace Halley {
 		Vector2f position;
 		Vector2f size;
 		Vector2f minSize;
-		Maybe<Rect4f> mouseClip;
+		std::optional<Rect4f> mouseClip;
 
 		Vector4f innerBorder;
-		Maybe<UISizer> sizer;
+		std::optional<UISizer> sizer;
 
 		mutable Vector2f layoutSize;
 		mutable int layoutNeeded = 1;
@@ -228,5 +237,15 @@ namespace Halley {
 		bool shrinkOnLayout = true;
 		bool destroying = false;
 		bool canSendEvents = true;
+		bool dontClipChildren = false;
 	};
+
+	template <typename F>
+	void UIParent::descend(F f)
+	{
+		for (auto& c: children) {
+			f(c);
+			c->descend(f);
+		}
+	}
 }

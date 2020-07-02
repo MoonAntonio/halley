@@ -91,23 +91,25 @@ void UIRoot::updateMouse(spInputDevice mouse)
 		underMouse = currentMouseOver.lock();
 	}
 
-	// Click
-	if (mouse->isButtonPressed(0)) {
-		mouseHeld = true;
-		setFocus(underMouse);
-		if (underMouse) {
-			mouse->clearButtonPress(0);
-			underMouse->pressMouse(mousePos, 0);
+	for (int i = 0; i < 3; ++i) {
+		// Click
+		if (!anyMouseButtonHeld && mouse->isButtonPressed(i)) {
+			anyMouseButtonHeld = true;
+			setFocus(underMouse);
+			if (underMouse) {
+				mouse->clearButtonPress(i);
+				underMouse->pressMouse(mousePos, i);
+			}
 		}
-	}
 
-	// Release click
-	auto focus = currentFocus.lock();
-	if (mouse->isButtonReleased(0)) {
-		mouseHeld = false;
-		if (focus) {
-			focus->releaseMouse(mousePos, 0);
-			mouse->clearButtonRelease(0);
+		// Release click
+		if (anyMouseButtonHeld && mouse->isButtonReleased(i)) {
+			anyMouseButtonHeld = false;
+			auto focus = currentFocus.lock();
+			if (focus) {
+				focus->releaseMouse(mousePos, i);
+				mouse->clearButtonRelease(i);
+			}
 		}
 	}
 
@@ -119,7 +121,7 @@ void UIRoot::updateMouse(spInputDevice mouse)
 
 	// If the mouse is held, but it's over a different component from the focused one, don't mouse over anything
 	auto activeMouseOver = underMouse;
-	if (mouseHeld && focus) {
+	if (auto focus = currentFocus.lock(); anyMouseButtonHeld && focus) {
 		if (focus != underMouse) {
 			activeMouseOver.reset();
 		}
@@ -230,7 +232,7 @@ void UIRoot::runLayout()
 	}
 }
 
-void UIRoot::setFocus(std::shared_ptr<UIWidget> focus)
+void UIRoot::setFocus(const std::shared_ptr<UIWidget>& focus)
 {
 	auto curFocus = currentFocus.lock();
 	if (curFocus != focus) {
@@ -243,6 +245,25 @@ void UIRoot::setFocus(std::shared_ptr<UIWidget> focus)
 			focus->setFocused(true);
 		}
 	}
+}
+
+void UIRoot::focusNext(bool reverse)
+{
+	std::vector<std::shared_ptr<UIWidget>> focusables;
+	descend([&] (const std::shared_ptr<UIWidget>& e)
+	{
+		if (e->canReceiveFocus()) {
+			focusables.push_back(e);
+		}
+	});
+
+	if (focusables.empty()) {
+		return;
+	}
+
+	const int index = gsl::narrow<int>(std::find(focusables.begin(), focusables.end(), currentFocus.lock()) - focusables.begin());
+	const int newIndex = modulo(index + (reverse ? -1 : 1), gsl::narrow<int>(focusables.size()));
+	setFocus(focusables[newIndex]);
 }
 
 void UIRoot::updateMouseOver(const std::shared_ptr<UIWidget>& underMouse)
@@ -300,7 +321,7 @@ std::shared_ptr<UIWidget> UIRoot::getWidgetUnderMouse(const std::shared_ptr<UIWi
 }
 
 void UIRoot::setUIMouseRemapping(std::function<Vector2f(Vector2f)> remapFunction) {
-	Expects(remapFunction);
+	Expects(remapFunction != nullptr);
 	mouseRemap = remapFunction;
 }
 
@@ -316,6 +337,11 @@ std::vector<std::shared_ptr<UIWidget>> UIRoot::collectWidgets()
 	}
 	collectWidgets(getChildren().back(), output);
 	return output;
+}
+
+void UIRoot::onChildAdded(UIWidget& child)
+{
+	child.onAddedToRoot();
 }
 
 void UIRoot::collectWidgets(const std::shared_ptr<UIWidget>& start, std::vector<std::shared_ptr<UIWidget>>& output)
@@ -338,7 +364,14 @@ void UIRoot::draw(SpritePainter& painter, int mask, int layer)
 	}
 }
 
-Maybe<AudioHandle> UIRoot::playSound(const String& eventName)
+void UIRoot::render(RenderContext& rc)
+{
+	for (auto& c: getChildren()) {
+		c->doRender(rc);
+	}
+}
+
+std::optional<AudioHandle> UIRoot::playSound(const String& eventName)
 {
 	if (audio && !eventName.isEmpty()) {
 		return audio->postEvent(eventName, AudioPosition::makeUI(0.0f));
@@ -355,7 +388,7 @@ void UIRoot::sendEvent(UIEvent&&) const
 bool UIRoot::hasModalUI() const
 {
 	for (auto& c: getChildren()) {
-		if (c->isModal()) {
+		if (c->isActive() && c->isModal()) {
 			return true;
 		}
 	}

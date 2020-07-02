@@ -182,7 +182,17 @@ TextRenderer TextRenderer::clone() const
 
 void TextRenderer::generateSprites(std::vector<Sprite>& sprites) const
 {
-	Expects(font);
+	Expects(font != nullptr);
+
+	bool floorEnabled = false;
+	auto floorAlign = [floorEnabled] (Vector2f a) -> Vector2f
+	{
+		if (floorEnabled) {
+			return a.floor();
+		} else {
+			return a;
+		}
+	};
 
 	const bool hasMaterialOverride = font->isDistanceField();
 	if (hasMaterialOverride && materialDirty) {
@@ -192,9 +202,9 @@ void TextRenderer::generateSprites(std::vector<Sprite>& sprites) const
 
 	if (glyphsDirty || positionDirty) {
 		float mainScale = getScale(*font);
-		Vector2f p = (position + Vector2f(0, font->getAscenderDistance() * mainScale)).floor();
+		Vector2f p = floorAlign(position + Vector2f(0, font->getAscenderDistance() * mainScale));
 		if (offset != Vector2f(0, 0)) {
-			p -= (getExtents() * offset).floor();
+			p -= floorAlign(getExtents() * offset);
 		}
 
 		size_t startPos = 0;
@@ -205,7 +215,7 @@ void TextRenderer::generateSprites(std::vector<Sprite>& sprites) const
 		{
 			// Line break, update previous characters!
 			if (align != 0) {
-				Vector2f off = (-lineOffset * align).floor();
+				Vector2f off = floorAlign(-lineOffset * align);
 				for (size_t j = startPos; j < spritesInserted; j++) {
 					auto& sprite = sprites[j];
 					sprite.setPos(sprite.getPosition() + off);
@@ -238,7 +248,7 @@ void TextRenderer::generateSprites(std::vector<Sprite>& sprites) const
 
 			// Check for colour override
 			while (curOverride < colourOverrides.size() && colourOverrides[curOverride].first == i) {
-				curCol = colourOverrides[curOverride].second ? colourOverrides[curOverride].second.get() : colour;
+				curCol = colourOverrides[curOverride].second ? colourOverrides[curOverride].second.value() : colour;
 				++curOverride;
 			}
 			
@@ -248,7 +258,7 @@ void TextRenderer::generateSprites(std::vector<Sprite>& sprites) const
 				auto& fontForGlyph = font->getFontForGlyph(c);
 				auto& glyph = fontForGlyph.getGlyph(c);
 				const float scale = getScale(fontForGlyph);
-				const auto fontAdjustment = (Vector2f(0, fontForGlyph.getAscenderDistance() - font->getAscenderDistance()) * scale).floor();
+				const auto fontAdjustment = floorAlign(Vector2f(0, fontForGlyph.getAscenderDistance() - font->getAscenderDistance()) * scale);
 
 				std::shared_ptr<Material> materialToUse = hasMaterialOverride ? getMaterial(fontForGlyph) : fontForGlyph.getMaterial();
 
@@ -286,7 +296,7 @@ void TextRenderer::draw(Painter& painter) const
 	}
 
 	if (clip) {
-		painter.setRelativeClip(clip.get() + position);
+		painter.setRelativeClip(clip.value() + position);
 	}
 	Sprite::drawMixedMaterials(spritesCache.data(), spritesCache.size(), painter);
 	if (clip) {
@@ -425,13 +435,13 @@ StringUTF32 TextRenderer::split(const StringUTF32& str, float maxWidth, std::fun
 	// Keep doing this while src is not exhausted
 	while (!src.empty()) {
 		float curWidth = 0.0f;
-		Maybe<gsl::span<const char32_t>> lastValid;
+		std::optional<gsl::span<const char32_t>> lastValid;
 
-		for (std::ptrdiff_t i = 0; i < src.length(); ++i) {
+		for (size_t i = 0; i < src.size(); ++i) {
 			const int32_t c = src[i];
 			const bool accepted = filter ? filter(c) : true;
 
-			const bool isLastChar = i == src.length() - 1;
+			const bool isLastChar = i == src.size() - 1;
 			if (isLastChar || (accepted && (c == '\n' || c == ' ' || c == '\t'))) {
 				lastValid = src.subspan(0, i + 1);
 			}
@@ -454,13 +464,13 @@ StringUTF32 TextRenderer::split(const StringUTF32& str, float maxWidth, std::fun
 					}
 					advanceAdjust = 0;
 				}
-				const int advance = int(lastValid.get().size());
+				const int advance = int(lastValid->size());
 				Expects(advance > 0);
 
 				if (!result.empty()) {
 					result.push_back('\n');
 				}
-				result += StringUTF32(lastValid.get().data(), advance + advanceAdjust);
+				result += StringUTF32(lastValid->data(), advance + advanceAdjust);
 				src = src.subspan(advance);
 				break;
 			}
@@ -504,7 +514,7 @@ float TextRenderer::getSmoothness() const
 	return smoothness;
 }
 
-Maybe<Rect4f> TextRenderer::getClip() const
+std::optional<Rect4f> TextRenderer::getClip() const
 {
 	return clip;
 }
@@ -540,8 +550,14 @@ std::shared_ptr<Material> TextRenderer::getMaterial(const Font& font) const
 
 void TextRenderer::updateMaterial(Material& material, const Font& font) const
 {
-	float smooth = clamp(smoothness / font.getSmoothRadius(), 0.001f, 0.999f);
-	float outlineSize = clamp(outline / font.getSmoothRadius(), 0.0f, 0.995f);
+	const float smoothRadius = font.getSmoothRadius();
+	const Vector2f smoothPerTexUnit = Vector2f(font.getImageSize()) / (2.0f * smoothRadius);
+	const float lowSmooth = std::min(smoothPerTexUnit.x, smoothPerTexUnit.y);
+
+	const float scale = getScale(font);
+	
+	const float smooth = smoothness * lowSmooth;
+	const float outlineSize = outline / smoothRadius / scale;
 	material
 		.set("u_smoothness", smooth)
 		.set("u_outline", outlineSize)

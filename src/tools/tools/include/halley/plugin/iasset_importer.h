@@ -58,12 +58,14 @@ namespace Halley
 		String name;
 		AssetType type;
 		std::map<String, PlatformVersion> platformVersions;
+		Path primaryInputFile;
 
 		void serialize(Serializer& s) const
 		{
 			s << name;
 			s << type;
 			s << platformVersions;
+			s << primaryInputFile;
 		}
 		
 		void deserialize(Deserializer& s)
@@ -71,6 +73,7 @@ namespace Halley
 			s >> name;
 			s >> type;
 			s >> platformVersions;
+			s >> primaryInputFile;
 		}
 	};
 
@@ -78,7 +81,7 @@ namespace Halley
 	{
 	public:
 		virtual ~IAssetCollector() {}
-		virtual void output(const String& name, AssetType type, const Bytes& data, Maybe<Metadata> metadata = {}, const String& platform = "pc") = 0;
+		virtual void output(const String& name, AssetType type, const Bytes& data, std::optional<Metadata> metadata = {}, const String& platform = "pc", const Path& primaryInputFile = {}) = 0;
 		virtual void addAdditionalAsset(ImportingAsset&& asset) = 0;
 		virtual bool reportProgress(float progress, const String& label = "") = 0;
 		virtual Bytes readAdditionalFile(const Path& filePath) = 0;
@@ -92,11 +95,19 @@ namespace Halley
 
 		virtual ImportAssetType getType() const { return ImportAssetType::Skip; }
 		virtual void import(const ImportingAsset&, IAssetCollector&) {}
-		virtual int dropFrontCount() const { return 1; }
+		virtual int dropFrontCount() const { return importByExtension ? 0 : 1; }
 
-		virtual String getAssetId(const Path& file, const Maybe<Metadata>& metadata) const
+		virtual String getAssetId(const Path& file, const std::optional<Metadata>& metadata) const
 		{
 			return file.dropFront(dropFrontCount()).string();
 		}
+
+		void setImportByExtension(bool enabled)
+		{
+			importByExtension = enabled;
+		}
+
+	private:
+		bool importByExtension = false;
 	};
 }

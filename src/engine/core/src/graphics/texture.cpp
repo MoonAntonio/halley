@@ -4,6 +4,7 @@
 #include <halley/file_formats/image.h>
 #include <halley/resources/metadata.h>
 #include "halley/concurrency/concurrent.h"
+#include "halley/support/logger.h"
 
 using namespace Halley;
 
@@ -17,7 +18,8 @@ void Texture::load(TextureDescriptor&& descriptor)
 
 std::shared_ptr<Texture> Texture::loadResource(ResourceLoader& loader)
 {
-	auto& meta = loader.getMeta();
+	const auto& meta = loader.getMeta();
+
 	Vector2i size(meta.getInt("width", -1), meta.getInt("height", -1));
 	if (size.x == -1 && size.y == -1) {
 		throw Exception("Unable to load texture \"" + loader.getName() + "\" due to missing asset data.", HalleyExceptions::Graphics);
@@ -40,9 +42,24 @@ std::shared_ptr<Texture> Texture::loadResource(ResourceLoader& loader)
 	{
 		auto& meta = texture->getMeta();
 
-		auto formatStr = meta.getString("format", "rgba");
-		if (formatStr == "rgba_premultiplied") {
-			formatStr = "rgba";
+		const auto imgFormat = fromString<Image::Format>(meta.getString("format", "rgba"));
+		TextureFormat format = TextureFormat::RGBA;
+		switch (imgFormat) {
+		case Image::Format::Indexed:
+			format = TextureFormat::Indexed;
+			break;
+		case Image::Format::RGB:
+			format = TextureFormat::RGB;
+			break;
+		case Image::Format::RGBA:
+		case Image::Format::RGBAPremultiplied:
+			format = TextureFormat::RGBA;
+			break;
+		case Image::Format::SingleChannel:
+			format = TextureFormat::Red;
+			break;
+		case Image::Format::Undefined:
+			format = TextureFormat::RGBA; // Hmm
 		}
 
 		Vector2i size(meta.getInt("width"), meta.getInt("height"));
@@ -50,7 +67,7 @@ std::shared_ptr<Texture> Texture::loadResource(ResourceLoader& loader)
 		descriptor.useFiltering = meta.getBool("filtering", false);
 		descriptor.useMipMap = meta.getBool("mipmap", false);
 		descriptor.addressMode = fromString<TextureAddressMode>(meta.getString("addressMode", "clamp"));
-		descriptor.format = fromString<TextureFormat>(formatStr);
+		descriptor.format = format;
 		descriptor.pixelData = std::move(img);
 		descriptor.pixelFormat = meta.getString("compression") == "png" ? PixelDataFormat::Image : PixelDataFormat::Precompiled;
 		texture->load(std::move(descriptor));

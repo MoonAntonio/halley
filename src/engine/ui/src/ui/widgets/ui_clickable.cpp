@@ -1,7 +1,7 @@
 #include "widgets/ui_clickable.h"
 using namespace Halley;
 
-UIClickable::UIClickable(String id, Vector2f minSize, Maybe<UISizer> sizer, Vector4f innerBorder)
+UIClickable::UIClickable(String id, Vector2f minSize, std::optional<UISizer> sizer, Vector4f innerBorder)
 	: UIWidget(std::move(id), minSize, std::move(sizer), innerBorder)
 {
 }
@@ -92,7 +92,7 @@ Rect4f UIClickable::getMouseRect() const
 	auto rect = UIWidget::getMouseRect();
 
 	if (mouseExtraBorder) {
-		auto& b = mouseExtraBorder.get();
+		auto& b = mouseExtraBorder.value();
 		return Rect4f(rect.getTopLeft() - Vector2f(b.x, b.y), rect.getBottomRight() + Vector2f(b.z, b.w));
 	}
 
@@ -128,7 +128,7 @@ void UIClickable::onShortcutPressed()
 {
 }
 
-void UIClickable::setMouseExtraBorder(Maybe<Vector4f> override)
+void UIClickable::setMouseExtraBorder(std::optional<Vector4f> override)
 {
 	mouseExtraBorder = override;
 }

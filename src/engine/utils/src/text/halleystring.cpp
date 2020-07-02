@@ -343,23 +343,21 @@ bool String::isNumber() const
 	bool foundSeparator = false;
 	bool foundDigit = false;
 	size_t i = 0;
-	for (const char *chr = c_str();*chr;chr++) {
+	for (const char *chr = c_str(); *chr; chr++) {
 		char cur = *chr;
 
 		if (cur >= '0' && cur <= '9') {
 			foundDigit = true;
-		}
-
-		else if (cur == '.' || cur == ',') {
-			if (foundSeparator) return false;
+		} else if (cur == '.' || cur == ',') {
+			if (foundSeparator) {
+				return false;
+			}
 			foundSeparator = true;
-		}
-				
-		else if (cur == '-') {
-			if (i != 0) return false;
-		}
-
-		else {
+		} else if (cur == '-') {
+			if (i != 0) {
+				return false;
+			}
+		} else {
 			return false;
 		}
 
@@ -371,17 +369,22 @@ bool String::isNumber() const
 
 bool String::isInteger() const
 {
-	int i=0;
-	for (const char *chr = c_str();*chr;chr++) {
+	bool hasDigit = false;
+	int i = 0;
+	for (const char *chr = c_str(); *chr; chr++) {
 		char cur = *chr;
 		if (cur == '-') {
-			if (i != 0) return false;
+			if (i != 0) {
+				return false;
+			}
 		} else if (cur < '0' || cur > '9') {
 			return false;
+		} else {
+			hasDigit = true;
 		}
 		i++;
 	}
-	return true;
+	return hasDigit;
 }
 
 
@@ -466,7 +469,7 @@ void String::asciiMakeLower()
 
 ///////////////
 
-String String::operator += (const String &p)
+String& String::operator += (const String &p)
 {
 	str.append(p);
 	return *this;
@@ -480,95 +483,39 @@ String String::operator += (const wxString &p)
 }
 #endif
 
-String String::operator += (const char* p)
+String& String::operator += (const char* p)
 {
 	str.append(p);
 	return *this;
 }
 
-String String::operator += (const wchar_t* p)
+String& String::operator += (const wchar_t* p)
 {
 	str.append(String(p));
 	return *this;
 }
 
-String String::operator += (const double &p)
+String& String::operator += (const double &p)
 {
 	str.append(toString(p));
 	return *this;
 }
 
-String String::operator += (const int &p)
+String& String::operator += (const int &p)
 {
 	str.append(toString(p));
 	return *this;
 }
 
-String String::operator += (const Character &p)
+String& String::operator += (const Character &p)
 {
 	str.append(1,p);
 	return *this;
 }
 
-void operator <<(double &p1,String &p2)
+void operator <<(double &p1, String &p2)
 {
-	p1 = atof(p2.c_str());
-}
-
-
-
-//////////////////////////////////
-// Convert a string to an integer
-int String::toInteger() const
-{
-	size_t len = length();
-	int value = 0;
-	int mult = 1;
-	int chr;
-	bool firstChar = true;
-	const char *data = c_str();
-	for (size_t i=0;i<len;i++) {
-		if (data[i] == ' ') continue;
-		chr = int(data[i])-int('0');
-		if (chr >= 0 && chr <= 9) value = 10*value+chr;
-		else if (firstChar && data[i] == '-') mult = -1;
-		else if (firstChar && data[i] == '+') {
-			firstChar = false;
-			continue;
-		}
-		else throw Exception("Out of Range", HalleyExceptions::Utils);
-		firstChar = false;
-	}
-	return value * mult;
-}
-
-long long String::toInteger64() const
-{
-	size_t len = length();
-	long long value = 0;
-	long long mult = 1;
-	int chr;
-	bool firstChar = true;
-	const char *data = c_str();
-	for (size_t i=0;i<len;i++) {
-		if (data[i] == ' ') continue;
-		chr = int(data[i])-int('0');
-		if (chr >= 0 && chr <= 9) value = 10*value+chr;
-		else if (firstChar && data[i] == '-') mult = -1;
-		else if (firstChar && data[i] == '+') {
-			firstChar = false;
-			continue;
-		}
-		else throw Exception("Out of Range", HalleyExceptions::Utils);
-		firstChar = false;
-	}
-	return value * mult;
-}
-
-
-float String::toFloat() const
-{
-	return float(atof(c_str()));
+	p1 = std::stof(p2.c_str());
 }
 
 

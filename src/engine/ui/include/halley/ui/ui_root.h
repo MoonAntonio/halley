@@ -6,6 +6,7 @@
 #include "ui_parent.h"
 #include "ui_input.h"
 #include "halley/core/api/audio_api.h"
+#include "halley/core/game/core.h"
 
 namespace Halley {
 	class SpritePainter;
@@ -32,17 +33,20 @@ namespace Halley {
 
 		void update(Time t, UIInputType activeInputType, spInputDevice mouse, spInputDevice manual);
 		void draw(SpritePainter& painter, int mask, int layer);
+		void render(RenderContext& rc);
+
 		void mouseOverNext(bool forward = true);
 		void runLayout();
 		
-		Maybe<AudioHandle> playSound(const String& eventName);
+		std::optional<AudioHandle> playSound(const String& eventName);
 		void sendEvent(UIEvent&& event) const override;
 
 		bool hasModalUI() const;
 		bool isMouseOverUI() const;
 		std::shared_ptr<UIWidget> getWidgetUnderMouse() const;
 		std::shared_ptr<UIWidget> getWidgetUnderMouseIncludingDisabled() const;
-		void setFocus(std::shared_ptr<UIWidget> focus);
+		void setFocus(const std::shared_ptr<UIWidget>& focus);
+		void focusNext(bool reverse);
 
 		UIWidget* getCurrentFocus() const;
 
@@ -51,6 +55,8 @@ namespace Halley {
 
 		std::vector<std::shared_ptr<UIWidget>> collectWidgets();
 
+		void onChildAdded(UIWidget& child) override;
+		
 	private:
 		String id;
 		std::weak_ptr<UIWidget> currentMouseOver;
@@ -61,7 +67,7 @@ namespace Halley {
 		Vector2f overscan;
 
 		AudioAPI* audio;
-		bool mouseHeld = false;
+		bool anyMouseButtonHeld = false;
 
 		std::function<Vector2f(Vector2f)> mouseRemap;
 

@@ -7,36 +7,55 @@ children:
     id: assetType
     type: horizontal
     options:
-    - id: animation
+    - id: sprite
       text: Sprites
+    - id: animation
+      text: Animations
+    - id: texture
+      text: Textures
     - id: audioClip
-      text: AudioClips
+      text: Audio Clips
+    - id: audioEvent
+      text: Audio Events
+    - id: font
+      text: Fonts
+    - id: materialDefinition
+      text: Materials
     - id: shader
       text: Shaders
 - widget: { class: widget }
   proportion: 1
   border: [0, 10, 0, 0]
+  sizer: { type: horizontal }
   children:
-  - widget: { class: scrollBarPane }
+  - sizer: { type: vertical }
     children:
-    - widget: 
-        class: list
-        id: assetList
-        size: [250, 20]
-        options:
-        - id: test0
-          text: test
-        - id: test1
-          text: test
-        - id: test2
-          text: test
+    - widget: { id: assetSearch, class: textInput, size: [ 40, 30 ], ghost: "Search assets..." }
+      border: [0, 0, 0, 5]
+    - widget: { class: scrollBarPane }
+      proportion: 1
+      children:
+      - widget: 
+          class: list
+          id: assetList
+          size: [250, 20]
+          options:
+          - id: test0
+            text: test
+          - id: test1
+            text: test
+          - id: test2
+            text: test
   - sizer: { type: vertical }
     proportion: 1
+    border: [10, 0, 10, 0]
     children:
-    - widget: { class: widget, id: contents }
+    - widget: { id: contentList, class: list, type: horizontal }
+    - widget: { id: content, class: pagedPane }
       fill: fill
       sizer: { type: horizontal }
       proportion: 1
     - widget: { class: label, id: assetName, text: "" }
       fill: centre
+  - widget: { class: metadataEditor }
 ...

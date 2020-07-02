@@ -10,9 +10,9 @@ UIParent::~UIParent()
 	}
 }
 
-Maybe<float> UIParent::getMaxChildWidth() const
+std::optional<float> UIParent::getMaxChildWidth() const
 {
-	return Maybe<float>();
+	return std::optional<float>();
 }
 
 void UIParent::addChild(std::shared_ptr<UIWidget> widget)
@@ -61,11 +61,12 @@ bool UIParent::addNewChildren(UIInputType inputType)
 
 	for (auto& c: childrenWaiting) {
 		c->setInputType(inputType);
-		children.emplace_back(std::move(c));
+		onChildAdded(*children.emplace_back(std::move(c)));
 	}
 	childrenWaiting.clear();
 
 	markAsNeedingLayout();
+	onChildrenAdded();
 	return true;
 }
 
@@ -81,6 +82,7 @@ bool UIParent::removeDeadChildren()
 	const bool removedAny = before != children.size();
 	if (removedAny) {
 		markAsNeedingLayout();
+		onChildrenRemoved();
 	}
 	return removedAny;
 }

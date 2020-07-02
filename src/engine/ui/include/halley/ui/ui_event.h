@@ -9,6 +9,8 @@
 namespace Halley {
 	enum class UIEventType {
 		Undefined,
+
+		// Please keep these in alphabetical order
 		ButtonClicked,
 		CheckboxUpdated,
 		Dragged,
@@ -17,6 +19,7 @@ namespace Halley {
 		DropdownClosed,
 		FocusGained,
 		FocusLost,
+		GroupFocusChangeRequested,
 		ListSelectionChanged,
 		ListAccept,
 		ListCancel,
@@ -24,6 +27,7 @@ namespace Halley {
 		MouseWheel,
 		MakeAreaVisible,
 		MakeAreaVisibleCentered,
+		ReloadData,
 		SetSelected,
 		SetEnabled,
 		SetHovered,
@@ -32,8 +36,10 @@ namespace Halley {
 		TabChanged,
 		TabbedIn,
 		TabbedOut,
-		WidgetHighlighted,
-		GroupFocusChangeRequested
+		TreeCollapse,
+		TreeExpand,
+		TreeItemReparented,
+		WidgetHighlighted
 	};
 
     class UIEvent {
@@ -45,12 +51,15 @@ namespace Halley {
 		UIEvent(UIEventType type, String sourceId, int data1, int data2);
 		UIEvent(UIEventType type, String sourceId, float data);
 		UIEvent(UIEventType type, String sourceId, String data, int intData);
+		UIEvent(UIEventType type, String sourceId, String data, String data2, int intData);
 		UIEvent(UIEventType type, String sourceId, Vector2f data);
 		UIEvent(UIEventType type, String sourceId, Rect4f data);
 		
     	UIEventType getType() const;
-		String getSourceId() const;
-		String getData() const;
+		const String& getSourceId() const;
+		[[deprecated]] String getData() const;
+    	const String& getStringData() const;
+    	const String& getStringData2() const;
 		bool getBoolData() const;
 		int getIntData() const;
 		int getIntData2() const;
@@ -64,7 +73,8 @@ namespace Halley {
     private:
 		UIEventType type;
 		String sourceId;
-		String data;
+		String strData;
+    	String strData2;
 		bool boolData = false;
 		int intData = 0;
 		int intData2 = 0;
@@ -79,7 +89,7 @@ namespace Halley {
 	class UIEventHandler {
 	public:
 		void setHandle(UIEventType type, UIEventCallback handler);
-		void setHandle(UIEventType type, String id, UIEventCallback handler);
+		void setHandle(UIEventType type, const String& id, UIEventCallback handler);
 
 		bool canHandle(const UIEvent& event) const;
 		void queue(const UIEvent& event);

@@ -1,28 +1,53 @@
+#include <utility>
 #include "halley/tools/assets/import_assets_database.h"
 #include "halley/tools/project/project.h"
+
+#include "halley/core/api/halley_api.h"
 #include "halley/tools/file/filesystem.h"
 #include "halley/core/game/halley_statics.h"
 #include "halley/tools/project/project_properties.h"
 #include "halley/support/logger.h"
 #include "halley/core/devcon/devcon_server.h"
+#include "halley/core/resources/resource_locator.h"
+#include "halley/core/resources/standard_resources.h"
 #include "halley/tools/assets/metadata_importer.h"
+#include "halley/tools/ecs/ecs_data.h"
+#include "halley/tools/project/project_loader.h"
 
 using namespace Halley;
 
-Project::Project(std::vector<String> _platforms, Path projectRootPath, Path halleyRootPath, std::vector<HalleyPluginPtr> plugins)
-	: platforms(std::move(_platforms))
-	, rootPath(projectRootPath)
-	, halleyRootPath(halleyRootPath)
-	, plugins(std::move(plugins))
-{
+Project::Project(Path projectRootPath, Path halleyRootPath, const ProjectLoader& loader)
+	: rootPath(std::move(projectRootPath))
+	, halleyRootPath(std::move(halleyRootPath))
+{	
+	properties = std::make_unique<ProjectProperties>(rootPath / "halley_project" / "properties.yaml");
+	assetPackManifest = rootPath / properties->getAssetPackManifest();
+
+	platforms = properties->getPlatforms();
+	plugins = loader.getPlugins(platforms);
+
 	importAssetsDatabase = std::make_unique<ImportAssetsDatabase>(getUnpackedAssetsPath(), getUnpackedAssetsPath() / "import.db", getUnpackedAssetsPath() / "assets.db", platforms);
 	codegenDatabase = std::make_unique<ImportAssetsDatabase>(getGenPath(), getGenPath() / "import.db", getGenPath() / "assets.db", std::vector<String>{ "" });
+	sharedCodegenDatabase = std::make_unique<ImportAssetsDatabase>(getSharedGenPath(), getSharedGenPath() / "import.db", getSharedGenPath() / "assets.db", std::vector<String>{ "" });
 	assetImporter = std::make_unique<AssetImporter>(*this, std::vector<Path>{getSharedAssetsSrcPath(), getAssetsSrcPath()});
-	properties = std::make_unique<ProjectProperties>(rootPath / "halley_project" / "properties.yaml");
+
+	loadECSData();
+
+	auto dllPath = loader.getDLLPath(rootPath, properties->getDLL());
+	if (!dllPath.isEmpty()) {
+		try {
+			gameDll = std::make_shared<DynamicLibrary>(dllPath.string());
+			gameDll->load(false);
+			Logger::logInfo("Loaded " + dllPath.string());
+		} catch (...) {
+			gameDll.reset();
+		}
+	}
 }
 
 Project::~Project()
 {
+	gameDll.reset();
 	assetImporter.reset();
 	plugins.clear();
 }
@@ -68,6 +93,16 @@ Path Project::getGenSrcPath() const
 	return rootPath / "gen_src";
 }
 
+Path Project::getSharedGenPath() const
+{
+	return halleyRootPath / "shared_gen";
+}
+
+Path Project::getSharedGenSrcPath() const
+{
+	return halleyRootPath / "shared_gen_src";
+}
+
 Path Project::getAssetPackManifestPath() const
 {
 	return assetPackManifest;
@@ -81,6 +116,16 @@ ImportAssetsDatabase& Project::getImportAssetsDatabase() const
 ImportAssetsDatabase& Project::getCodegenDatabase() const
 {
 	return *codegenDatabase;
+}
+
+ImportAssetsDatabase& Project::getSharedCodegenDatabase() const
+{
+	return *sharedCodegenDatabase;
+}
+
+ECSData& Project::getECSData() const
+{
+	return *ecsData;
 }
 
 const AssetImporter& Project::getAssetImporter() const
@@ -127,49 +172,69 @@ ProjectProperties& Project::getProperties() const
 	return *properties;
 }
 
-Maybe<Metadata> Project::getMetadata(AssetType type, const String& assetId)
+Metadata Project::getImportMetadata(AssetType type, const String& assetId) const
 {
-	auto path = importAssetsDatabase->getMetadataPath(type, assetId);
-	if (path) {
-		Metadata data;
-		MetadataImporter::loadMetaData(data, getAssetsSrcPath() / path.get(), false, assetId);
-		return data;
-	}
-	return {};
+	return importAssetsDatabase->getMetadata(type, assetId).value_or(Metadata());
 }
 
-void Project::setMetaData(AssetType type, const String& assetId, const Metadata& metadata)
+Metadata Project::readMetadataFromDisk(const Path& filePath) const
 {
-	auto maybePath = importAssetsDatabase->getMetadataPath(type, assetId);
-	if (maybePath) {
-		const auto str = metadata.toYAMLString();
-		auto data = Bytes(str.size());
-		memcpy(data.data(), str.c_str(), str.size());
+	Metadata metadata;
+	const Path metaPath = getAssetsSrcPath() / filePath.replaceExtension(filePath.getExtension() + ".meta");
+	MetadataImporter::loadMetaData(metadata, metaPath, false, filePath);
+	return metadata;
+}
 
-		const auto& path = maybePath.get();
-		const auto metaPath = getAssetsSrcPath() / path;
-		const auto filePath = path.replaceExtension(path.getExtension().left(path.getExtension().size() - 5));
+void Project::writeMetadataToDisk(const Path& filePath, const Metadata& metadata)
+{
+	const auto str = metadata.toYAMLString();
+	auto data = Bytes(str.size());
+	memcpy(data.data(), str.c_str(), str.size());
 
-		FileSystem::writeFile(metaPath, data);
-		notifyAssetFileModified(filePath);
-	}
+	const Path metaPath = getAssetsSrcPath() / filePath.replaceExtension(filePath.getExtension() + ".meta");
+	FileSystem::writeFile(metaPath, data);
+	notifyAssetFileModified(filePath);
+}
+
+std::vector<String> Project::getAssetSrcList() const
+{
+	return importAssetsDatabase->getInputFiles();
+}
+
+std::vector<std::pair<AssetType, String>> Project::getAssetsFromFile(const Path& path) const
+{
+	return importAssetsDatabase->getAssetsFromFile(path);
 }
 
 void Project::reloadAssets(const std::set<String>& assets, bool packed)
 {
-	if (assetReloadCallbacks.empty()) {
-		return;
-	}
-
+	// Build name list
 	std::vector<String> assetIds;
 	assetIds.reserve(assets.size());
 	for (auto& a: assets) {
 		assetIds.push_back(a);
 	}
 
+	// Reload game assets
+	if (!packed && gameResources) {
+		if (gameResources->getLocator().getLocatorCount() == 0) {
+			try {
+				gameResources->getLocator().addFileSystem(getUnpackedAssetsPath());
+			} catch (...) {}
+		}
+
+		gameResources->reloadAssets(assetIds);
+	}
+
+	// Notify callbacks
 	for (auto& callback: (packed ? assetPackedReloadCallbacks : assetReloadCallbacks)) {
 		callback(assetIds);
 	}
+}
+
+void Project::reloadCodegen()
+{
+	loadECSData();
 }
 
 void Project::setCheckAssetTask(CheckAssetsTask* task)
@@ -183,4 +248,43 @@ void Project::notifyAssetFileModified(Path path)
 	if (checkAssetsTask) {
 		checkAssetsTask->requestRefreshAsset(std::move(path));
 	}
+}
+
+const std::shared_ptr<DynamicLibrary>& Project::getGameDLL() const
+{
+	return gameDll;
+}
+
+void Project::loadGameResources(const HalleyAPI& api)
+{
+	auto locator = std::make_unique<ResourceLocator>(*api.system);
+	try {
+		locator->addFileSystem(getUnpackedAssetsPath());
+	} catch (...) {}
+
+	gameResources = std::make_unique<Resources>(std::move(locator), api);
+	StandardResources::initialize(*gameResources);
+}
+
+Resources& Project::getGameResources()
+{
+	return *gameResources;
+}
+
+void Project::loadECSData()
+{
+	ecsData = std::make_unique<ECSData>();
+
+	const auto& inputFiles = codegenDatabase->getInputFiles();
+	const auto n = inputFiles.size();
+	std::vector<CodegenSourceInfo> sources(n);
+	std::vector<Bytes> inputData(n);
+	
+	for (size_t i = 0; i < n; ++i) {
+		inputData[i] = FileSystem::readFile(getGenSrcPath() / inputFiles[i]);
+		auto data = gsl::as_bytes(gsl::span<Byte>(inputData[i].data(), inputData[i].size()));
+		sources[i] = CodegenSourceInfo{inputFiles[i], data, true};
+	}
+	
+	ecsData->loadSources(sources);
 }

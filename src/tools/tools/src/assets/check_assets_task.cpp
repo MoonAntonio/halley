@@ -22,6 +22,8 @@ CheckAssetsTask::CheckAssetsTask(Project& project, bool oneShot)
 	, monitorSharedAssetsSrc(project.getSharedAssetsSrcPath())
 	, monitorGen(project.getGenPath())
 	, monitorGenSrc(project.getGenSrcPath())
+	, monitorSharedGen(project.getSharedGenPath())
+	, monitorSharedGenSrc(project.getSharedGenSrcPath())
 	, oneShot(oneShot)
 {
 	project.setCheckAssetTask(this);
@@ -52,12 +54,21 @@ void CheckAssetsTask::run()
 				requestImport(project.getImportAssetsDatabase(), assets, project.getUnpackedAssetsPath(), "Importing assets", true);
 			}
 		}
-
-		if (first | monitorGen.poll() | monitorGenSrc.poll()) {
+		
+		const bool sharedGenSrcResult = first | monitorSharedGenSrc.poll();
+		if (sharedGenSrcResult | monitorGen.poll() | monitorGenSrc.poll()) {
 			Logger::logInfo("Scanning for codegen changes...");
-			const auto assets = checkAllAssets(project.getCodegenDatabase(), { project.getGenSrcPath() }, false);
+			const auto assets = checkAllAssets(project.getCodegenDatabase(), { project.getSharedGenSrcPath(), project.getGenSrcPath() }, false);
 			if (!isCancelled()) {
 				requestImport(project.getCodegenDatabase(), assets, project.getGenPath(), "Generating code", false);
+			}
+		}
+
+		if (sharedGenSrcResult | monitorSharedGen.poll()) {
+			Logger::logInfo("Scanning for Halley codegen changes...");
+			const auto assets = checkAllAssets(project.getSharedCodegenDatabase(), { project.getSharedGenSrcPath() }, false);
+			if (!isCancelled()) {
+				requestImport(project.getSharedCodegenDatabase(), assets, project.getSharedGenPath(), "Generating code", false);
 			}
 		}
 
@@ -77,7 +88,7 @@ void CheckAssetsTask::run()
 	}
 }
 
-bool CheckAssetsTask::importFile(ImportAssetsDatabase& db, std::map<String, ImportAssetsDatabaseEntry>& assets, const bool isCodegen, const std::vector<Path>& directoryMetas, const Path& srcPath, const Path& filePath) {
+bool CheckAssetsTask::importFile(ImportAssetsDatabase& db, std::map<String, ImportAssetsDatabaseEntry>& assets, bool isCodegen, bool skipGen, const std::vector<Path>& directoryMetas, const Path& srcPath, const Path& filePath) {
 	std::array<int64_t, 3> timestamps = {{ 0, 0, 0 }};
 	bool dbChanged = false;
 
@@ -86,17 +97,17 @@ bool CheckAssetsTask::importFile(ImportAssetsDatabase& db, std::map<String, Impo
 
 	// Collect data on directory meta file
 	auto dirMetaPath = findDirectoryMeta(directoryMetas, filePath);
-	if (dirMetaPath && FileSystem::exists(srcPath / dirMetaPath.get())) {
-		dirMetaPath = srcPath / dirMetaPath.get();
-		timestamps[1] = FileSystem::getLastWriteTime(dirMetaPath.get());
+	if (dirMetaPath && FileSystem::exists(srcPath / dirMetaPath.value())) {
+		dirMetaPath = srcPath / dirMetaPath.value();
+		timestamps[1] = FileSystem::getLastWriteTime(dirMetaPath.value());
 	} else {
 		dirMetaPath = {};
 	}
 
 	// Collect data on private meta file
-	Maybe<Path> privateMetaPath = srcPath / filePath.replaceExtension(filePath.getExtension() + ".meta");
-	if (FileSystem::exists(privateMetaPath.get())) {
-		timestamps[2] = FileSystem::getLastWriteTime(privateMetaPath.get());
+	std::optional<Path> privateMetaPath = srcPath / filePath.replaceExtension(filePath.getExtension() + ".meta");
+	if (FileSystem::exists(privateMetaPath.value())) {
+		timestamps[2] = FileSystem::getLastWriteTime(privateMetaPath.value());
 	} else {
 		privateMetaPath = {};
 	}
@@ -104,7 +115,10 @@ bool CheckAssetsTask::importFile(ImportAssetsDatabase& db, std::map<String, Impo
 	// Load metadata if needed
 	if (db.needToLoadInputMetadata(filePath, timestamps)) {
 		Metadata meta = MetadataImporter::getMetaData(filePath, dirMetaPath, privateMetaPath);
-		db.setInputFileMetadata(filePath, timestamps, meta);
+		if (skipGen) {
+			meta.set("skipGen", true);
+		}
+		db.setInputFileMetadata(filePath, timestamps, meta, srcPath);
 		dbChanged = true;
 	}
 
@@ -158,7 +172,7 @@ std::map<String, ImportAssetsDatabaseEntry> CheckAssetsTask::checkSpecificAssets
 	std::map<String, ImportAssetsDatabaseEntry> assets;
 	bool dbChanged = false;
 	for (auto& path: paths) {
-		dbChanged = dbChanged | importFile(db, assets, false, directoryMetas, project.getAssetsSrcPath(), path);
+		dbChanged = dbChanged | importFile(db, assets, false, false, directoryMetas, project.getAssetsSrcPath(), path);
 	}
 	if (dbChanged) {
 		db.save();
@@ -170,7 +184,6 @@ std::map<String, ImportAssetsDatabaseEntry> CheckAssetsTask::checkAllAssets(Impo
 {
 	std::map<String, ImportAssetsDatabaseEntry> assets;
 
-	bool isCodegen = srcPaths.size() == 1 && srcPaths[0] == project.getGenSrcPath();
 	bool dbChanged = false;
 
 	if (collectDirMeta) {
@@ -179,7 +192,7 @@ std::map<String, ImportAssetsDatabaseEntry> CheckAssetsTask::checkAllAssets(Impo
 	std::vector<Path> dummyDirMetas;
 
 	// Enumerate all potential assets
-	for (auto srcPath : srcPaths) {
+	for (const auto& srcPath: srcPaths) {
 		auto allFiles = FileSystem::enumerateDirectory(srcPath);
 
 		// First, collect all directory metas
@@ -192,7 +205,9 @@ std::map<String, ImportAssetsDatabaseEntry> CheckAssetsTask::checkAllAssets(Impo
 		}
 
 		// Next, go through normal files
-		for (auto& filePath : allFiles) {
+		const bool isCodegen = srcPath == project.getGenSrcPath() || srcPath == project.getSharedGenSrcPath();
+		const bool skipGen = srcPath == project.getSharedGenSrcPath() && srcPaths.size() > 1;
+		for (const auto& filePath : allFiles) {
 			if (filePath.getExtension() == ".meta") {
 				continue;
 			}
@@ -200,7 +215,13 @@ std::map<String, ImportAssetsDatabaseEntry> CheckAssetsTask::checkAllAssets(Impo
 				return {};
 			}
 
-			dbChanged = dbChanged | importFile(db, assets, isCodegen, collectDirMeta ? directoryMetas : dummyDirMetas, srcPath, filePath);
+			if (skipGen) {
+				const auto basePath = project.getGenSrcPath();
+				const auto newPath = srcPath.makeRelativeTo(basePath) / filePath;
+				dbChanged = dbChanged | importFile(db, assets, isCodegen, skipGen, collectDirMeta ? directoryMetas : dummyDirMetas, basePath, newPath);
+			} else {
+				dbChanged = dbChanged | importFile(db, assets, isCodegen, skipGen, collectDirMeta ? directoryMetas : dummyDirMetas, srcPath, filePath);
+			}
 		}
 	}
 
@@ -258,10 +279,10 @@ std::vector<ImportAssetsDatabaseEntry> CheckAssetsTask::filterNeedsImporting(Imp
 	return toImport;
 }
 
-Maybe<Path> CheckAssetsTask::findDirectoryMeta(const std::vector<Path>& metas, const Path& path) const
+std::optional<Path> CheckAssetsTask::findDirectoryMeta(const std::vector<Path>& metas, const Path& path) const
 {
 	auto parent = path.parentPath();
-	Maybe<Path> longestPath;
+	std::optional<Path> longestPath;
 	for (auto& m: metas) {
 		if (!longestPath || longestPath->getNumberPaths() < m.getNumberPaths()) {
 			auto n = m.getNumberPaths() - 1;

@@ -58,7 +58,7 @@ ConfigNode::ConfigNode(SequenceType&& entryList)
 	operator=(std::move(entryList));
 }
 
-ConfigNode::ConfigNode(String&& value)
+ConfigNode::ConfigNode(String value)
 {
 	operator=(std::move(value));
 }
@@ -455,8 +455,28 @@ String ConfigNode::asString() const
 		return toString(asInt());
 	} else if (type == ConfigNodeType::Float) {
 		return toString(asFloat());
+	} else if (type == ConfigNodeType::Sequence) {
+		String result = "[";
+		bool first = true;
+		for (auto& e: asSequence()) {
+			if (!first) {
+				result += ", ";
+			}
+			first = false;
+			result += e.asString();
+		}
+		result += "]";
+		return result;
+	} else if (type == ConfigNodeType::Float2) {
+		auto v = asVector2f();
+		return "(" + toString(v.x) + ", " + toString(v.y) + ")";
+	} else if (type == ConfigNodeType::Int2) {
+		auto v = asVector2i();
+		return "(" + toString(v.x) + ", " + toString(v.y) + ")";
+	} else if (type == ConfigNodeType::Map) {
+		return "{...}";
 	} else {
-		throw Exception(getNodeDebugId() + " is not a string type", HalleyExceptions::Resources);
+		throw Exception("Can't convert " + getNodeDebugId() + " from " + toString(getType()) + " to String.", HalleyExceptions::Resources);
 	}
 }
 
@@ -536,7 +556,8 @@ bool ConfigNode::hasKey(const String& key) const
 {
 	if (type == ConfigNodeType::Map) {
 		auto& map = asMap();
-		return map.find(key) != map.end();
+		auto iter = map.find(key);
+		return iter != map.end() && iter->second.getType() != ConfigNodeType::Undefined;
 	} else {
 		return false;
 	}
@@ -715,6 +736,12 @@ ConfigFile::ConfigFile()
 {
 }
 
+ConfigFile::ConfigFile(const ConfigFile& other)
+{
+	root = ConfigNode(other.root);
+	updateRoot();
+}
+
 ConfigFile::ConfigFile(ConfigFile&& other)
 {
 	root = std::move(other.root);
@@ -823,6 +850,37 @@ String ConfigObserver::getAssetId() const
 	} else {
 		return "";
 	}
+}
+
+std::unique_ptr<Prefab> Prefab::loadResource(ResourceLoader& loader)
+{
+	auto prefab = std::make_unique<Prefab>();
+
+	auto data = loader.getStatic();
+	Deserializer::fromBytes(*prefab, data->getSpan());
+
+	return prefab;
+}
+
+void Prefab::reload(Resource&& resource)
+{
+	*this = std::move(dynamic_cast<Prefab&>(resource));
+	updateRoot();
+}
+
+std::unique_ptr<Scene> Scene::loadResource(ResourceLoader& loader)
+{
+	auto scene = std::make_unique<Scene>();
+	auto data = loader.getStatic();
+	Deserializer::fromBytes(*scene, data->getSpan());
+
+	return scene;
+}
+
+void Scene::reload(Resource&& resource)
+{
+	*this = std::move(dynamic_cast<Scene&>(resource));
+	updateRoot();
 }
 
 ConfigNode ConfigNode::undefinedConfigNode;
